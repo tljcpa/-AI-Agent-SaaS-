@@ -44,10 +44,11 @@ class AgentEngine:
         )
         await self._resume_events[state.session_id].wait()
 
-        decision = state.context.get("confirm_plan")
+        decision = state.context.get("confirm_plan", "").lower()
         if decision != "confirm":
             state.phase = AgentPhase.DONE
             await emit({"type": "message", "message": "任务已取消。你可以重新描述需求。"})
+            self._resume_events.pop(state.session_id, None)
             return
 
         state.phase = AgentPhase.EXECUTE
@@ -79,6 +80,7 @@ class AgentEngine:
         await emit({"type": "message", "message": report})
         await emit({"type": "message", "message": summary})
         await emit({"type": "action_progress", "message": "任务执行完成。"})
+        self._resume_events.pop(state.session_id, None)
 
     async def resume(self, state: AgentState, action: str, value: str, emit: Emitter) -> None:
         """恢复挂起状态。"""
@@ -95,3 +97,4 @@ class AgentEngine:
         state.waiting_action = None
         if state.session_id in self._resume_events:
             self._resume_events[state.session_id].set()
+

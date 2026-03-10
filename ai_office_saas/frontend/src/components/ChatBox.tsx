@@ -23,19 +23,27 @@ export default function ChatBox({ token }: Props) {
   }, [token, sessionId])
 
   useEffect(() => {
+    if (!token) return
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
     ws.onmessage = (ev) => {
       const data: WSMessage = JSON.parse(ev.data)
-      if (data.session_id && !sessionId) {
-        setSessionId(data.session_id)
+      if (data.session_id) {
+        setSessionId((prev) => prev || data.session_id || '')
       }
       setMessages((prev) => [...prev, data])
     }
 
-    return () => ws.close()
-  }, [wsUrl, sessionId])
+    ws.onerror = () => {
+      setMessages((prev) => [...prev, { type: 'error', message: 'WebSocket 连接异常' }])
+    }
+
+    return () => {
+      ws.close()
+      wsRef.current = null
+    }
+  }, [token, wsUrl])
 
   const sendStart = () => {
     if (!input.trim()) return
@@ -59,26 +67,17 @@ export default function ChatBox({ token }: Props) {
               <p>{m.message}</p>
               {m.type === 'action_confirm' && m.payload?.action && (
                 <div className="mt-2 space-x-2">
-                  <button
-                    className="px-2 py-1 bg-green-600 text-white rounded"
-                    onClick={() => replyAction(m.payload!.action!, 'confirm')}
-                  >
+                  <button className="px-2 py-1 bg-green-600 text-white rounded" onClick={() => replyAction(m.payload!.action!, 'confirm')}>
                     确认
                   </button>
-                  <button
-                    className="px-2 py-1 bg-red-500 text-white rounded"
-                    onClick={() => replyAction(m.payload!.action!, 'cancel')}
-                  >
+                  <button className="px-2 py-1 bg-red-500 text-white rounded" onClick={() => replyAction(m.payload!.action!, 'cancel')}>
                     取消
                   </button>
                 </div>
               )}
               {m.type === 'action_ask_user' && m.payload?.action && (
                 <div className="mt-2">
-                  <button
-                    className="px-2 py-1 bg-blue-600 text-white rounded"
-                    onClick={() => replyAction(m.payload!.action!, '已上传')}
-                  >
+                  <button className="px-2 py-1 bg-blue-600 text-white rounded" onClick={() => replyAction(m.payload!.action!, '已上传')}>
                     已上传，继续
                   </button>
                 </div>

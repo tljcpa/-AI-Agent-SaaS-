@@ -16,6 +16,10 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 session_states: dict[str, AgentState] = {}
 
 
+def get_agent_engine(websocket: WebSocket) -> AgentEngine:
+    return websocket.app.state.container.agent_engine
+
+
 @router.websocket("/ws")
 async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
@@ -30,6 +34,16 @@ async def websocket_chat(websocket: WebSocket):
     user_id = int(sub)
     session_id = websocket.query_params.get("session_id") or str(uuid4())
 
+    state = session_states.get(session_id)
+    if state is None:
+        state = AgentState(session_id=session_id, user_id=user_id)
+        session_states[session_id] = state
+    elif state.user_id != user_id:
+        await websocket.send_json({"type": "error", "message": "会话不属于当前用户"})
+        await websocket.close(code=1008)
+        return
+
+    engine = get_agent_engine(websocket)
     state = session_states.get(session_id) or AgentState(session_id=session_id, user_id=user_id)
     session_states[session_id] = state
 
@@ -57,13 +71,15 @@ async def websocket_chat(websocket: WebSocket):
                 running_task = asyncio.create_task(engine.start(state, text, emit))
 
             elif kind == "user_action":
-                action = str(incoming.get("action", ""))
-                value = str(incoming.get("value", ""))
+                action = str(incoming.get("action", "")).strip()
+                value = str(incoming.get("value", "")).strip()
+                if not action:
+                    await emit({"type": "error", "message": "action 不能为空"})
+                    continue
                 await engine.resume(state, action, value, emit)
 
             else:
                 await emit({"type": "error", "message": f"不支持的消息类型: {kind}"})
 
     except WebSocketDisconnect:
-        # 客户端断开时保留状态，以支持断线重连恢复。
         return

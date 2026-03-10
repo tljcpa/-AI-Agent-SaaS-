@@ -1,6 +1,10 @@
 """文件接口：上传与列表，按 user_id 实现沙箱隔离。"""
 from __future__ import annotations
 
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
+
+from app.adapters.protocols import StorageProvider
+from app.core.container import AppContainer
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 
 from app.adapters.protocols import StorageProvider
@@ -22,11 +26,18 @@ def get_current_user_id(authorization: str = Header(default="")) -> int:
     return int(subject)
 
 
+def get_storage(request: Request) -> StorageProvider:
+    """从应用容器中获取存储实现。"""
+
+    container: AppContainer = request.app.state.container
+    return container.storage
+
+
 @router.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
     user_id: int = Depends(get_current_user_id),
-    storage: StorageProvider = Depends(lambda: router.storage_provider),
+    storage: StorageProvider = Depends(get_storage),
 ):
     content = await file.read()
     relative_path = storage.save_file(user_id, file.filename, content)
@@ -39,6 +50,6 @@ async def upload_file(
 @router.get("")
 def list_files(
     user_id: int = Depends(get_current_user_id),
-    storage: StorageProvider = Depends(lambda: router.storage_provider),
+    storage: StorageProvider = Depends(get_storage),
 ):
     return {"items": storage.list_files(user_id)}
