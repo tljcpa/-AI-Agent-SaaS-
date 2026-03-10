@@ -27,10 +27,12 @@ def _cleanup_session_states() -> None:
         session_last_seen.pop(sid, None)
         session_states.pop(sid, None)
 
-    if len(session_states) <= MAX_SESSION_STATES:
+    tracked_session_count = len(session_last_seen)
+    if tracked_session_count <= MAX_SESSION_STATES:
         return
 
-    oldest_session_ids = sorted(session_last_seen.items(), key=lambda item: item[1])[: len(session_states) - MAX_SESSION_STATES]
+    overflow = tracked_session_count - MAX_SESSION_STATES
+    oldest_session_ids = sorted(session_last_seen.items(), key=lambda item: item[1])[:overflow]
     for sid, _ in oldest_session_ids:
         session_last_seen.pop(sid, None)
         session_states.pop(sid, None)
