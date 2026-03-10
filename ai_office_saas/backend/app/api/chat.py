@@ -44,6 +44,10 @@ async def websocket_chat(websocket: WebSocket):
         return
 
     engine = get_agent_engine(websocket)
+    state = session_states.get(session_id) or AgentState(session_id=session_id, user_id=user_id)
+    session_states[session_id] = state
+
+    engine: AgentEngine = router.agent_engine
 
     async def emit(payload: dict) -> None:
         await websocket.send_json({**payload, "session_id": session_id})

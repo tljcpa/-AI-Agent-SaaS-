@@ -5,6 +5,9 @@ from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, Up
 
 from app.adapters.protocols import StorageProvider
 from app.core.container import AppContainer
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
+
+from app.adapters.protocols import StorageProvider
 from app.core.security import try_get_subject
 from app.models.database import UserFile, session_scope
 
