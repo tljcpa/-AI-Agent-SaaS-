@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from time import time
 from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -14,6 +15,25 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 # 会话态缓存：生产环境建议替换为 Redis。
 session_states: dict[str, AgentState] = {}
+session_last_seen: dict[str, float] = {}
+MAX_SESSION_STATES = 1000
+SESSION_TTL_SECONDS = 60 * 60
+
+
+def _cleanup_session_states() -> None:
+    now = time()
+    expired = [sid for sid, last_seen in session_last_seen.items() if now - last_seen > SESSION_TTL_SECONDS]
+    for sid in expired:
+        session_last_seen.pop(sid, None)
+        session_states.pop(sid, None)
+
+    if len(session_states) <= MAX_SESSION_STATES:
+        return
+
+    oldest_session_ids = sorted(session_last_seen.items(), key=lambda item: item[1])[: len(session_states) - MAX_SESSION_STATES]
+    for sid, _ in oldest_session_ids:
+        session_last_seen.pop(sid, None)
+        session_states.pop(sid, None)
 
 
 def get_agent_engine(websocket: WebSocket) -> AgentEngine:
@@ -33,6 +53,7 @@ async def websocket_chat(websocket: WebSocket):
 
     user_id = int(sub)
     session_id = websocket.query_params.get("session_id") or str(uuid4())
+    _cleanup_session_states()
 
     state = session_states.get(session_id)
     if state is None:
@@ -43,11 +64,9 @@ async def websocket_chat(websocket: WebSocket):
         await websocket.close(code=1008)
         return
 
-    engine = get_agent_engine(websocket)
-    state = session_states.get(session_id) or AgentState(session_id=session_id, user_id=user_id)
-    session_states[session_id] = state
+    session_last_seen[session_id] = time()
 
-    engine: AgentEngine = router.agent_engine
+    engine = get_agent_engine(websocket)
 
     async def emit(payload: dict) -> None:
         await websocket.send_json({**payload, "session_id": session_id})
@@ -61,6 +80,7 @@ async def websocket_chat(websocket: WebSocket):
             kind = incoming.get("type")
 
             if kind == "start":
+                session_last_seen[session_id] = time()
                 text = str(incoming.get("message", "")).strip()
                 if not text:
                     await emit({"type": "error", "message": "任务描述不能为空"})
@@ -71,6 +91,7 @@ async def websocket_chat(websocket: WebSocket):
                 running_task = asyncio.create_task(engine.start(state, text, emit))
 
             elif kind == "user_action":
+                session_last_seen[session_id] = time()
                 action = str(incoming.get("action", "")).strip()
                 value = str(incoming.get("value", "")).strip()
                 if not action:

@@ -21,8 +21,11 @@ class LocalStorageProvider:
     def _assert_in_sandbox(self, user_root: Path, target: Path) -> None:
         """确保目标路径在用户沙箱内，防止目录穿越攻击。"""
 
+        resolved_user_root = user_root.resolve()
         resolved_target = target.resolve()
-        if user_root.resolve() not in resolved_target.parents and resolved_target != user_root.resolve():
+        try:
+            resolved_target.relative_to(resolved_user_root)
+        except ValueError:
             raise ValueError("非法路径：超出用户沙箱范围")
 
     def save_file(self, user_id: int, filename: str, content: bytes) -> str:

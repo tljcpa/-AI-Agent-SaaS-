@@ -12,7 +12,12 @@ interface Props {
 }
 
 export default function ChatBox({ token }: Props) {
-  const [sessionId, setSessionId] = useState<string>('')
+  const [sessionId] = useState<string>(() => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID()
+    }
+    return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  })
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<WSMessage[]>([])
   const wsRef = useRef<WebSocket | null>(null)
@@ -29,9 +34,6 @@ export default function ChatBox({ token }: Props) {
 
     ws.onmessage = (ev) => {
       const data: WSMessage = JSON.parse(ev.data)
-      if (data.session_id) {
-        setSessionId((prev) => prev || data.session_id || '')
-      }
       setMessages((prev) => [...prev, data])
     }
 
