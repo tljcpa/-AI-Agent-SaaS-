@@ -18,6 +18,23 @@ class AgentEngine:
         self.storage = storage
         self.office = office
         self._resume_events: dict[str, asyncio.Event] = {}
+        self._resume_events_lock = asyncio.Lock()
+
+    @staticmethod
+    def _event_key(state: AgentState) -> str:
+        return f"{state.user_id}:{state.session_id}"
+
+    async def _register_resume_event(self, state: AgentState) -> asyncio.Event:
+        key = self._event_key(state)
+        async with self._resume_events_lock:
+            event = asyncio.Event()
+            self._resume_events[key] = event
+        return event
+
+    async def _pop_resume_event(self, state: AgentState) -> None:
+        key = self._event_key(state)
+        async with self._resume_events_lock:
+            self._resume_events.pop(key, None)
 
     async def start(self, state: AgentState, user_message: str, emit: Emitter) -> None:
         """启动任务执行。"""
@@ -34,7 +51,7 @@ class AgentEngine:
 
         state.phase = AgentPhase.WAIT_USER
         state.waiting_action = "confirm_plan"
-        self._resume_events[state.session_id] = asyncio.Event()
+        resume_event = await self._register_resume_event(state)
         await emit(
             {
                 "type": "action_confirm",
@@ -42,13 +59,13 @@ class AgentEngine:
                 "payload": {"action": "confirm_plan"},
             }
         )
-        await self._resume_events[state.session_id].wait()
+        await resume_event.wait()
 
         decision = state.context.get("confirm_plan", "").lower()
         if decision != "confirm":
             state.phase = AgentPhase.DONE
             await emit({"type": "message", "message": "任务已取消。你可以重新描述需求。"})
-            self._resume_events.pop(state.session_id, None)
+            await self._pop_resume_event(state)
             return
 
         state.phase = AgentPhase.EXECUTE
@@ -58,7 +75,7 @@ class AgentEngine:
         if not files:
             state.phase = AgentPhase.WAIT_USER
             state.waiting_action = "need_file"
-            self._resume_events[state.session_id] = asyncio.Event()
+            resume_event = await self._register_resume_event(state)
             await emit(
                 {
                     "type": "action_ask_user",
@@ -66,7 +83,7 @@ class AgentEngine:
                     "payload": {"action": "need_file"},
                 }
             )
-            await self._resume_events[state.session_id].wait()
+            await resume_event.wait()
             files = self.storage.list_files(state.user_id)
 
         target = files[0]
@@ -80,7 +97,7 @@ class AgentEngine:
         await emit({"type": "message", "message": report})
         await emit({"type": "message", "message": summary})
         await emit({"type": "action_progress", "message": "任务执行完成。"})
-        self._resume_events.pop(state.session_id, None)
+        await self._pop_resume_event(state)
 
     async def resume(self, state: AgentState, action: str, value: str, emit: Emitter) -> None:
         """恢复挂起状态。"""
@@ -95,6 +112,8 @@ class AgentEngine:
 
         state.context[action] = value
         state.waiting_action = None
-        if state.session_id in self._resume_events:
-            self._resume_events[state.session_id].set()
-
+        key = self._event_key(state)
+        async with self._resume_events_lock:
+            event = self._resume_events.get(key)
+        if event:
+            event.set()

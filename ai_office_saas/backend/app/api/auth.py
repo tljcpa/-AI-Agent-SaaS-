@@ -17,6 +17,7 @@ class AuthRequest(BaseModel):
 
 @router.post("/register")
 def register(payload: AuthRequest):
+    user_id: int | None = None
     with session_scope() as db:
         exists = db.query(User).filter(User.username == payload.username).first()
         if exists:
@@ -25,8 +26,13 @@ def register(payload: AuthRequest):
         user = User(username=payload.username, hashed_password=hash_password(payload.password))
         db.add(user)
         db.flush()
-        token = create_access_token(str(user.id))
-        return {"access_token": token, "token_type": "bearer", "user_id": user.id}
+        user_id = user.id
+
+    if user_id is None:
+        raise HTTPException(status_code=500, detail="用户创建失败")
+
+    token = create_access_token(str(user_id))
+    return {"access_token": token, "token_type": "bearer", "user_id": user_id}
 
 
 @router.post("/login")
