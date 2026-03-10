@@ -1,0 +1,21 @@
+app:
+  name: "AI Office SaaS"
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins:
+    - "http://localhost:5173"
+security:
+  jwt_secret: "CHANGE_ME_TO_A_STRONG_SECRET"
+  jwt_algorithm: "HS256"
+  access_token_expire_minutes: 120
+storage:
+  type: "local"
+  base_path: "./data/users"
+llm:
+  provider: "zhipu_mock"
+  api_key: "mock-key"
+office:
+  provider: "e5_mock"
+
+database:
+  url: "sqlite:///./ai_office.db"
