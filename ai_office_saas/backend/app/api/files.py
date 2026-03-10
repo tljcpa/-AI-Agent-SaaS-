@@ -9,6 +9,15 @@ from app.core.security import try_get_subject
 from app.models.database import UserFile, session_scope
 
 router = APIRouter(prefix="/files", tags=["files"])
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+ALLOWED_CONTENT_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/msword",
+    "application/vnd.ms-excel",
+    "text/plain",
+}
 
 
 def get_current_user_id(authorization: str = Header(default="")) -> int:
@@ -36,7 +45,13 @@ async def upload_file(
     user_id: int = Depends(get_current_user_id),
     storage: StorageProvider = Depends(get_storage),
 ):
+    if file.content_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(status_code=400, detail="不支持的文件类型")
+
     content = await file.read()
+    if len(content) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"文件过大，最大支持 {MAX_UPLOAD_BYTES // (1024 * 1024)}MB")
+
     relative_path = storage.save_file(user_id, file.filename, content)
     with session_scope() as db:
         db_file = UserFile(user_id=user_id, filename=file.filename, path=relative_path)

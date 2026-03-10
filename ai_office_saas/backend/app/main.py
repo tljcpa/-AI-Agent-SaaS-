@@ -1,6 +1,8 @@
 """FastAPI 应用入口。"""
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -12,7 +14,13 @@ from app.models.database import init_db
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title=settings.app.name)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI):
+        init_db()
+        yield
+
+    app = FastAPI(title=settings.app.name, lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -28,10 +36,6 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/api")
     app.include_router(files.router, prefix="/api")
     app.include_router(chat.router, prefix="/api")
-
-    @app.on_event("startup")
-    def on_startup() -> None:
-        init_db()
 
     return app
 
