@@ -11,3 +11,4 @@
 
 请优先阅读离线部署文档：
 - [OFFLINE_SETUP_CN.md](./docs/OFFLINE_SETUP_CN.md)
+- [DEPLOYMENT_QUICKSTART_CN.md](./docs/DEPLOYMENT_QUICKSTART_CN.md)
