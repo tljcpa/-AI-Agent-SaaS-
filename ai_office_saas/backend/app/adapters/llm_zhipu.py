@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 from app.adapters.protocols import ToolCallResult, ToolSchema
@@ -41,9 +42,16 @@ class ZhipuLLMProvider:
                 selected = tool
                 break
 
+        if selected.name in {"read_word_content", "format_word_document"}:
+            content = json.dumps({"file_id": "mock-file-id"})
+        elif selected.name in {"read_excel_data", "write_excel_data"}:
+            content = json.dumps({"file_id": "mock-file-id", "sheet_name": "Sheet1", "data": []})
+        else:
+            content = json.dumps({"file_id": "mock-file-id"})
+
         return ToolCallResult(
             tool_name=selected.name,
             success=True,
-            content="{}",
+            content=content,
             raw={"messages": len(messages), "context": context or {}},
         )
