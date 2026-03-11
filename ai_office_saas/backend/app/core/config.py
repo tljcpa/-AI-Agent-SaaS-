@@ -50,7 +50,7 @@ class MSGraphConfig(BaseModel):
     client_secret: str = ""
     redirect_uri: str = "http://localhost:8000/api/oauth/callback"
     scopes: list[str] = Field(
-        default_factory=lambda: ["Files.ReadWrite", "Sites.ReadWrite.All", "offline_access"]
+        default_factory=lambda: ["Files.ReadWrite", "offline_access"]
     )
 
 
@@ -74,4 +74,12 @@ def get_settings() -> Settings:
     env_jwt_secret = getenv("JWT_SECRET")
     if env_jwt_secret:
         payload.setdefault("security", {})["jwt_secret"] = env_jwt_secret
-    return Settings.model_validate(payload)
+
+    settings = Settings.model_validate(payload)
+    app_env = getenv("APP_ENV", "development")
+    if (
+        settings.security.jwt_secret == "INSECURE_DEV_ONLY_SET_JWT_SECRET_ENV"
+        and app_env != "development"
+    ):
+        raise RuntimeError("生产环境必须通过 JWT_SECRET 环境变量设置强密钥")
+    return settings

@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Generator
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from app.core.config import get_settings
@@ -37,6 +37,9 @@ class User(Base):
     oauth_tokens: Mapped[list[UserOAuthToken]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    oauth_states: Mapped[list[OAuthStateCache]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class UserFile(Base):
@@ -64,10 +67,24 @@ class UserOAuthToken(Base):
     access_token: Mapped[str] = mapped_column(Text)
     refresh_token: Mapped[str] = mapped_column(Text)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    is_refreshing: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, onupdate=_utc_now)
 
     user: Mapped[User] = relationship(back_populates="oauth_tokens")
+
+
+class OAuthStateCache(Base):
+    """OAuth state 一次性缓存，防止 CSRF。"""
+
+    __tablename__ = "oauth_state_cache"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    state_token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    user: Mapped[User] = relationship(back_populates="oauth_states")
 
 
 def setup_database(database_url: str) -> None:

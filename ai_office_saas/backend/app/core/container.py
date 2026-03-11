@@ -8,7 +8,7 @@ from app.adapters.llm_zhipu import ZhipuLLMProvider
 from app.adapters.ms_auth import MSAuthService
 from app.adapters.office_e5 import E5OfficeProvider
 from app.adapters.office_graph import GraphOfficeProvider
-from app.adapters.protocols import LLMProvider, OfficeAPIProvider, StorageProvider
+from app.adapters.protocols import LLMProvider, OfficeAPIProvider, StorageProvider, ToolSchema
 from app.adapters.storage_local import LocalStorageProvider
 from app.adapters.storage_onedrive import OneDriveStorageProvider
 from app.agent.engine import AgentEngine
@@ -62,5 +62,55 @@ def build_container(settings: Settings) -> AppContainer:
     llm = ProviderFactory.create_llm(settings)
     office = ProviderFactory.create_office(settings)
     tool_registry = ToolRegistry()
+
+    tool_registry.register(
+        ToolSchema(
+            name="read_word_content",
+            description="读取 Word 文本内容",
+            parameters={"type": "object", "properties": {"file_id": {"type": "string"}}, "required": ["file_id"]},
+        ),
+        lambda user_id, file_id: office.read_word_content(user_id, file_id),
+    )
+    tool_registry.register(
+        ToolSchema(
+            name="read_excel_data",
+            description="读取 Excel sheet 数据",
+            parameters={
+                "type": "object",
+                "properties": {"file_id": {"type": "string"}, "sheet_name": {"type": "string"}},
+                "required": ["file_id", "sheet_name"],
+            },
+        ),
+        lambda user_id, file_id, sheet_name: office.read_excel_data(user_id, file_id, sheet_name),
+    )
+    tool_registry.register(
+        ToolSchema(
+            name="format_word_document",
+            description="按指令格式化 Word 文档",
+            parameters={
+                "type": "object",
+                "properties": {"file_id": {"type": "string"}, "style_instructions": {"type": "string"}},
+                "required": ["file_id", "style_instructions"],
+            },
+        ),
+        lambda user_id, file_id, style_instructions: office.format_word_document(user_id, file_id, style_instructions),
+    )
+    tool_registry.register(
+        ToolSchema(
+            name="write_excel_data",
+            description="写入 Excel 数据",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "file_id": {"type": "string"},
+                    "sheet_name": {"type": "string"},
+                    "data": {"type": "array"},
+                },
+                "required": ["file_id", "sheet_name", "data"],
+            },
+        ),
+        lambda user_id, file_id, sheet_name, data: office.write_excel_data(user_id, file_id, sheet_name, data),
+    )
+
     engine = AgentEngine(llm=llm, storage=storage, office=office, tool_registry=tool_registry)
     return AppContainer(storage=storage, llm=llm, office=office, agent_engine=engine, tool_registry=tool_registry)

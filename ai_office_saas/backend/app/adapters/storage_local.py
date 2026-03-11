@@ -1,6 +1,7 @@
 """本地文件存储实现：严格限制在 user 沙箱目录中。"""
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 
@@ -28,26 +29,26 @@ class LocalStorageProvider:
         except ValueError:
             raise ValueError("非法路径：超出用户沙箱范围")
 
-    def save_file(self, user_id: int, filename: str, content: bytes) -> str:
+    async def save_file(self, user_id: int, filename: str, content: bytes) -> str:
         """保存文件并返回相对路径。"""
 
         safe_name = Path(filename).name
         user_root = self._user_root(user_id)
         target = user_root / safe_name
         self._assert_in_sandbox(user_root, target)
-        target.write_bytes(content)
+        await asyncio.to_thread(target.write_bytes, content)
         return safe_name
 
-    def list_files(self, user_id: int) -> list[str]:
+    async def list_files(self, user_id: int) -> list[str]:
         """列出用户沙箱内文件。"""
 
         user_root = self._user_root(user_id)
-        return [item.name for item in user_root.iterdir() if item.is_file()]
+        return await asyncio.to_thread(lambda: [item.name for item in user_root.iterdir() if item.is_file()])
 
-    def read_text(self, user_id: int, relative_path: str) -> str:
+    async def read_text(self, user_id: int, relative_path: str) -> str:
         """读取用户沙箱内文本文件。"""
 
         user_root = self._user_root(user_id)
         target = user_root / relative_path
         self._assert_in_sandbox(user_root, target)
-        return target.read_text(encoding="utf-8")
+        return await asyncio.to_thread(target.read_text, encoding="utf-8")
