@@ -1,7 +1,10 @@
-"""智谱模型适配器（当前实现为可替换的 Mock 骨架）。"""
+"""智谱模型适配器（支持基础 function-calling）。"""
 from __future__ import annotations
 
 import asyncio
+from typing import Any
+
+from app.adapters.protocols import ToolCallResult, ToolSchema
 
 
 class ZhipuLLMProvider:
@@ -11,8 +14,36 @@ class ZhipuLLMProvider:
         self.api_key = api_key
 
     async def generate(self, prompt: str, context: dict | None = None) -> str:
-        # 这里模拟大模型响应延迟，真实环境中可通过 httpx 调用供应商接口。
         await asyncio.sleep(0.2)
         if context:
             return f"[LLM响应] 基于上下文 {context}，建议执行：{prompt[:120]}"
         return f"[LLM响应] {prompt[:200]}"
+
+    async def tool_call(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSchema],
+        context: dict[str, Any] | None = None,
+    ) -> ToolCallResult:
+        """轻量 mock：根据最后一条用户消息选择工具。"""
+
+        await asyncio.sleep(0.2)
+        user_text = ""
+        if messages:
+            user_text = str(messages[-1].get("content", "")).lower()
+
+        if not tools:
+            return ToolCallResult(tool_name="", success=False, content="无可用工具")
+
+        selected = tools[0]
+        for tool in tools:
+            if tool.name.lower() in user_text:
+                selected = tool
+                break
+
+        return ToolCallResult(
+            tool_name=selected.name,
+            success=True,
+            content=f"调用工具 {selected.name}（mock）",
+            raw={"messages": len(messages), "context": context or {}},
+        )

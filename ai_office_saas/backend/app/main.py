@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, chat, files
+from app.api import auth, chat, files, oauth
 from app.core.config import get_settings
 from app.core.container import build_container
 from app.models.database import init_db
@@ -36,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router, prefix="/api")
     app.include_router(files.router, prefix="/api")
     app.include_router(chat.router, prefix="/api")
+    app.include_router(oauth.router, prefix="/api")
 
     return app
 

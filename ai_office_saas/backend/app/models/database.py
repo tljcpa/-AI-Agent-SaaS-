@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Generator
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, create_engine
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from app.core.config import get_settings
@@ -34,6 +34,9 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
 
     files: Mapped[list[UserFile]] = relationship(back_populates="owner", cascade="all, delete-orphan")
+    oauth_tokens: Mapped[list[UserOAuthToken]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
+    )
 
 
 class UserFile(Base):
@@ -50,9 +53,24 @@ class UserFile(Base):
     owner: Mapped[User] = relationship(back_populates="files")
 
 
-def setup_database(database_url: str) -> None:
-    """初始化数据库引擎与会话工厂（幂等）。"""
+class UserOAuthToken(Base):
+    """用户 OAuth token（按 user_id 隔离）。"""
 
+    __tablename__ = "user_oauth_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(32), default="onedrive")
+    access_token: Mapped[str] = mapped_column(Text)
+    refresh_token: Mapped[str] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utc_now, onupdate=_utc_now)
+
+    user: Mapped[User] = relationship(back_populates="oauth_tokens")
+
+
+def setup_database(database_url: str) -> None:
     global engine, SessionLocal
     if engine is not None and SessionLocal is not None:
         return
@@ -70,8 +88,6 @@ def _require_session_local() -> sessionmaker:
 
 @contextmanager
 def session_scope() -> Generator:
-    """事务上下文管理器，确保异常时回滚。"""
-
     session = _require_session_local()()
     try:
         yield session
@@ -84,7 +100,6 @@ def session_scope() -> Generator:
 
 
 def init_db() -> None:
-    """初始化数据库表结构。"""
     settings = get_settings()
     setup_database(settings.database.url)
     if engine is None:

@@ -1,7 +1,27 @@
 """底层能力抽象协议：通过 Protocol 实现接口驱动架构。"""
 from __future__ import annotations
 
-from typing import Protocol
+from dataclasses import dataclass, field
+from typing import Any, Protocol
+
+
+@dataclass(slots=True)
+class ToolSchema:
+    """工具定义，供 LLM function-calling 使用。"""
+
+    name: str
+    description: str
+    parameters: dict[str, Any]
+
+
+@dataclass(slots=True)
+class ToolCallResult:
+    """单次工具调用结果。"""
+
+    tool_name: str
+    success: bool
+    content: str
+    raw: dict[str, Any] = field(default_factory=dict)
 
 
 class StorageProvider(Protocol):
@@ -21,6 +41,14 @@ class LLMProvider(Protocol):
     """大模型调用协议。"""
 
     async def generate(self, prompt: str, context: dict | None = None) -> str:
+        ...
+
+    async def tool_call(
+        self,
+        messages: list[dict[str, Any]],
+        tools: list[ToolSchema],
+        context: dict[str, Any] | None = None,
+    ) -> ToolCallResult:
         ...
 
 
