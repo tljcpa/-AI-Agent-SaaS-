@@ -46,6 +46,7 @@ class MSAuthService:
 
     async def get_valid_access_token(self, user_id: int) -> str:
         for _ in range(5):
+            token_id = 0
             with session_scope() as db:
                 token = (
                     db.query(UserOAuthToken)
@@ -70,6 +71,7 @@ class MSAuthService:
                     continue_refresh = True
                 else:
                     continue_refresh = False
+                    token_id = token.id
                     refresh_token = decrypt_token(token.refresh_token)
 
             if continue_refresh:
@@ -82,13 +84,11 @@ class MSAuthService:
                 return str(data["access_token"])
             finally:
                 with session_scope() as clear_db:
-                    row = (
-                        clear_db.query(UserOAuthToken)
-                        .filter(UserOAuthToken.user_id == user_id, UserOAuthToken.provider == "onedrive")
-                        .first()
+                    clear_db.execute(
+                        update(UserOAuthToken)
+                        .where(UserOAuthToken.id == token_id)
+                        .values(is_refreshing=False)
                     )
-                    if row is not None:
-                        row.is_refreshing = False
 
         raise RuntimeError("Token 刷新重试次数已耗尽")
 
