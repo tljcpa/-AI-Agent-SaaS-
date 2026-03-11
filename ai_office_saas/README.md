@@ -15,3 +15,7 @@
    - [DEPLOYMENT_QUICKSTART_CN.md](./docs/DEPLOYMENT_QUICKSTART_CN.md)
 2. 受限网络 / 离线安装补充
    - [OFFLINE_SETUP_CN.md](./docs/OFFLINE_SETUP_CN.md)
+
+## 部署注意事项
+- 当前后端 `build_container` 构建出的 Agent 会话状态保存在进程内存中（`/api/chat/ws`）。
+- 生产环境若启用多 worker，必须配置 sticky session（如 nginx `ip_hash`）或使用单 worker（`--workers=1`），否则会话状态可能丢失。

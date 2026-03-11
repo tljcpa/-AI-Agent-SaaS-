@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from time import time
 from uuid import uuid4
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from app.agent.engine import AgentEngine
 from app.agent.state import AgentState
@@ -15,6 +17,9 @@ from app.core.security import try_get_subject
 router = APIRouter(prefix="/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
 
+# 注意：当前 session 状态保存在进程内存，仅支持单进程模式。
+# 多 worker 部署时必须启用 sticky session（如 nginx ip_hash）或限制 --workers=1，
+# 否则 WebSocket 会话可能在跨 worker 路由后出现状态丢失/不一致。
 session_states: dict[str, AgentState] = {}
 session_last_seen: dict[str, float] = {}
 MAX_SESSION_STATES = 1000
@@ -45,12 +50,10 @@ def get_agent_engine(websocket: WebSocket) -> AgentEngine:
 
 @router.websocket("/ws")
 async def websocket_chat(websocket: WebSocket):
+    # WebSocket 鉴权只支持 Authorization header 或首帧 auth 消息，不支持 query param 传 token。
     await websocket.accept()
 
     token = websocket.headers.get("authorization", "").removeprefix("Bearer ").strip()
-    if not token:
-        token = websocket.query_params.get("token", "")
-
     session_id = websocket.query_params.get("session_id") or str(uuid4())
     _cleanup_session_states()
     logger.info("WebSocket connected", extra={"session_id": session_id})
@@ -67,10 +70,28 @@ async def websocket_chat(websocket: WebSocket):
     try:
         while True:
             try:
-                incoming = await websocket.receive_json()
-            except Exception:
+                incoming_text = await websocket.receive_text()
+                incoming = json.loads(incoming_text)
+                if not isinstance(incoming, dict):
+                    raise ValueError("payload must be object")
+            except json.JSONDecodeError:
+                if websocket.client_state != WebSocketState.CONNECTED:
+                    return
                 await emit({"type": "error", "message": "消息格式错误，请发送合法 JSON"})
                 continue
+            except ValueError:
+                if websocket.client_state != WebSocketState.CONNECTED:
+                    return
+                await emit({"type": "error", "message": "消息格式错误，请发送合法 JSON"})
+                continue
+            except WebSocketDisconnect:
+                raise
+            except Exception:
+                if websocket.client_state != WebSocketState.CONNECTED:
+                    return
+                await emit({"type": "error", "message": "消息格式错误，请发送合法 JSON"})
+                continue
+
             kind = incoming.get("type")
 
             if state is None:
@@ -93,6 +114,14 @@ async def websocket_chat(websocket: WebSocket):
                     state = AgentState(session_id=session_id, user_id=current_user_id)
                     session_states[session_id] = state
                 elif state.user_id != current_user_id:
+                    logger.warning(
+                        "Possible cross-worker routing or session hijack detected",
+                        extra={
+                            "session_id": session_id,
+                            "existing_user_id": state.user_id,
+                            "current_user_id": current_user_id,
+                        },
+                    )
                     await emit({"type": "error", "message": "会话不属于当前用户"})
                     await websocket.close(code=1008)
                     return

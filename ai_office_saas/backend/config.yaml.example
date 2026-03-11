@@ -5,7 +5,7 @@ app:
   cors_origins:
     - "http://localhost:5173"
 security:
-  jwt_secret: "在此填入强随机密钥或通过 JWT_SECRET 环境变量注入"
+  jwt_secret: "REPLACE_ME_WITH_A_32_BYTE_RANDOM_SECRET"
   jwt_algorithm: "HS256"
   access_token_expire_minutes: 120
 storage:

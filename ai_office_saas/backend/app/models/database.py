@@ -102,7 +102,7 @@ def setup_database(database_url: str) -> None:
 
 def _require_session_local() -> sessionmaker:
     if SessionLocal is None:
-        raise RuntimeError("数据库尚未初始化，请先调用 init_db()")
+        raise RuntimeError("数据库尚未初始化，请先调用 init_db()；请检查是否在 FastAPI lifespan 之前误调用了 session_scope()")
     return SessionLocal
 
 
@@ -120,6 +120,7 @@ def session_scope() -> Generator:
 
 
 def init_db() -> None:
+    # 注意：此函数必须且只能在 FastAPI lifespan 回调中调用。
     settings = get_settings()
     setup_database(settings.database.url)
     if engine is None:

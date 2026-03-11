@@ -34,6 +34,7 @@ class AgentEngine:
     def _event_key(state: AgentState) -> str:
         return f"{state.user_id}:{state.session_id}"
 
+    # 注册 WAIT_USER 阶段对应的唤醒事件，所有权交给 start() 协程及其 finally 清理。
     async def _register_resume_event(self, state: AgentState) -> asyncio.Event:
         key = self._event_key(state)
         async with self._resume_events_lock:
@@ -41,18 +42,18 @@ class AgentEngine:
             self._resume_events[key] = event
         return event
 
+    # 释放事件所有权；由 start() finally 与 resume() 成功唤醒后调用，必须保持幂等。
     async def _pop_resume_event(self, state: AgentState) -> None:
         key = self._event_key(state)
         async with self._resume_events_lock:
             self._resume_events.pop(key, None)
 
     async def start(self, state: AgentState, user_message: str, emit: Emitter) -> None:
+        # UNDERSTAND/PLAN 阶段为未来扩展预留，当前版本直接从 IDLE 进入 EXECUTE。
         try:
             logger.info("Agent start", extra={"session_id": state.session_id, "user_id": state.user_id})
             state.task = user_message
-            state.phase = AgentPhase.UNDERSTAND
             state.messages.append({"role": "user", "content": user_message})
-            state.phase = AgentPhase.PLAN
             state.phase = AgentPhase.EXECUTE
             await emit({"type": "action_progress", "message": "进入 ReAct 执行循环..."})
 
@@ -86,17 +87,35 @@ class AgentEngine:
                 if not decision.tool_name:
                     break
 
-                if decision.success:
-                    try:
-                        tool_args = json.loads(decision.content) if decision.content else {}
-                    except json.JSONDecodeError:
-                        await emit({"type": "error", "message": f"LLM 返回的工具参数无法解析: {decision.content}"})
-                        break
-                    result = await self.tool_registry.dispatch(
-                        decision.tool_name,
-                        {**tool_args, "user_id": state.user_id},
-                    )
-                    state.messages.append({"role": "tool", "content": result})
+                try:
+                    tool_args = json.loads(decision.content) if decision.content else {}
+                except json.JSONDecodeError:
+                    await emit({"type": "error", "message": f"LLM 返回的工具参数无法解析: {decision.content}"})
+                    break
+                if not isinstance(tool_args, dict):
+                    await emit({"type": "error", "message": "LLM 返回的工具参数必须为 JSON 对象"})
+                    break
+
+                try:
+                    schema = self.tool_registry.get_schema(decision.tool_name)
+                except KeyError:
+                    await emit({"type": "error", "message": f"未知工具: {decision.tool_name}"})
+                    break
+
+                allowed_keys = set(schema.parameters.get("properties", {}).keys())
+                filtered_args = {k: v for k, v in tool_args.items() if k in allowed_keys}
+                required_keys = schema.parameters.get("required", [])
+                missing = [key for key in required_keys if key not in filtered_args]
+                if missing:
+                    await emit({"type": "error", "message": f"工具参数缺失: {', '.join(missing)}"})
+                    break
+
+                result = await self.tool_registry.dispatch(
+                    decision.tool_name,
+                    user_id=state.user_id,
+                    arguments=filtered_args,
+                )
+                state.messages.append({"role": "tool", "content": result})
 
             summary = await self.llm.generate("请给出当前任务总结", {"steps": state.step_count})
             await emit({"type": "message", "message": summary})
@@ -110,6 +129,9 @@ class AgentEngine:
             await self._pop_resume_event(state)
 
     async def resume(self, state: AgentState, action: str, value: str, emit: Emitter) -> None:
+        if state.phase == AgentPhase.ERROR or state.phase in {AgentPhase.DONE}:
+            await emit({"type": "message", "message": "任务已结束，无法恢复"})
+            return
         if state.phase != AgentPhase.WAIT_USER:
             await emit({"type": "message", "message": "当前无需人工介入。"})
             return
@@ -122,5 +144,6 @@ class AgentEngine:
         key = self._event_key(state)
         async with self._resume_events_lock:
             event = self._resume_events.get(key)
-        if event:
-            event.set()
+            if event:
+                event.set()
+                self._resume_events.pop(key, None)

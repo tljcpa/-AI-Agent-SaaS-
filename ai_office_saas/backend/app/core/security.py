@@ -4,7 +4,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from jose import JWTError, jwt
+import jwt
+from jwt.exceptions import InvalidTokenError
 from passlib.context import CryptContext
 
 from app.core.config import get_settings
@@ -34,7 +35,7 @@ def create_access_token(subject: str) -> str:
 
 
 def decode_access_token(token: str) -> dict[str, Any]:
-    """解码访问令牌，失败则抛出 JWTError。"""
+    """解码访问令牌，失败则抛出 InvalidTokenError。"""
 
     settings = get_settings()
     return jwt.decode(token, settings.security.jwt_secret, algorithms=[settings.security.jwt_algorithm])
@@ -47,5 +48,5 @@ def try_get_subject(token: str) -> str | None:
         payload = decode_access_token(token)
         sub = payload.get("sub")
         return str(sub) if sub is not None else None
-    except JWTError:
+    except InvalidTokenError:
         return None

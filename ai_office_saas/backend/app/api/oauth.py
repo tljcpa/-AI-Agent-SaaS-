@@ -54,21 +54,25 @@ async def oauth_callback(
     service: MSAuthService = Depends(get_oauth_service),
 ):
     with session_scope() as db:
-        state_row = db.query(OAuthStateCache).filter(OAuthStateCache.state_token == state).first()
-        if state_row is None or state_row.expires_at <= datetime.now(timezone.utc):
+        state_row = (
+            db.query(OAuthStateCache)
+            .filter(
+                OAuthStateCache.state_token == state,
+                OAuthStateCache.expires_at > datetime.now(timezone.utc),
+            )
+            .first()
+        )
+        if state_row is None:
             raise HTTPException(status_code=400, detail="state 非法或已过期")
         user_id = state_row.user_id
+        db.delete(state_row)
+        db.flush()
 
     try:
         await service.exchange_code(user_id, code)
     except Exception as e:
         logger.error("OAuth callback exchange failed", exc_info=e)
         raise HTTPException(status_code=502, detail=f"OneDrive 授权失败: {e}")
-
-    with session_scope() as db:
-        state_row = db.query(OAuthStateCache).filter(OAuthStateCache.state_token == state).first()
-        if state_row:
-            db.delete(state_row)
 
     logger.info("OAuth callback completed", extra={"user_id": user_id})
     return {"ok": True, "message": "OneDrive 授权成功，可继续发起任务"}

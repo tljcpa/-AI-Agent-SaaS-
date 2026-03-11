@@ -25,13 +25,20 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-slate-100">
       <div className="bg-white p-6 rounded shadow w-96 space-y-3">
         <h1 className="text-xl font-bold">AI Office SaaS</h1>
-        <input className="w-full border rounded px-3 py-2" placeholder="用户名" value={username} onChange={(e) => setUsername(e.target.value)} />
+        <input
+          className="w-full border rounded px-3 py-2"
+          placeholder="用户名"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
+        />
         <input
           className="w-full border rounded px-3 py-2"
           type="password"
           placeholder="密码"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit() }}
         />
         {error && <p className="text-red-500 text-sm">{error}</p>}
         <button className="w-full bg-indigo-600 text-white rounded py-2" onClick={submit}>
