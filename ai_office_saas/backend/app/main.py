@@ -1,8 +1,10 @@
 """FastAPI 应用入口。"""
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,14 +13,22 @@ from app.core.config import get_settings
 from app.core.container import build_container
 from app.models.database import init_db
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+
 
 def create_app() -> FastAPI:
     settings = get_settings()
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI):
+    async def lifespan(app: FastAPI):
         init_db()
-        yield
+        async with httpx.AsyncClient(timeout=30) as http_client:
+            app.state.http_client = http_client
+            app.state.container = build_container(settings, http_client)
+            yield
 
     app = FastAPI(title=settings.app.name, lifespan=lifespan)
 
@@ -29,9 +39,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-
-    # 依赖注入装配：通过 config.yaml 选择具体实现。
-    app.state.container = build_container(settings)
 
     app.include_router(auth.router, prefix="/api")
     app.include_router(files.router, prefix="/api")

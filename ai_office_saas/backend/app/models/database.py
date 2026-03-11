@@ -4,6 +4,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Generator
+import threading
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
@@ -17,6 +18,7 @@ class Base(DeclarativeBase):
 
 engine = None
 SessionLocal: sessionmaker | None = None
+_db_init_lock = threading.Lock()
 
 
 def _utc_now() -> datetime:
@@ -89,12 +91,13 @@ class OAuthStateCache(Base):
 
 def setup_database(database_url: str) -> None:
     global engine, SessionLocal
-    if engine is not None and SessionLocal is not None:
-        return
+    with _db_init_lock:
+        if engine is not None and SessionLocal is not None:
+            return
 
-    connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
-    engine = create_engine(database_url, connect_args=connect_args)
-    SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+        connect_args = {"check_same_thread": False} if database_url.startswith("sqlite") else {}
+        engine = create_engine(database_url, connect_args=connect_args)
+        SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
 def _require_session_local() -> sessionmaker:

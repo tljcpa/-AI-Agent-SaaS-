@@ -55,7 +55,7 @@ npm run dev
 
 - 后端：打开 `http://localhost:8000/docs` 应看到 FastAPI 文档。
 - 前端：打开 `http://localhost:5173` 登录后可进入 Dashboard。
-- 聊天：通过 WebSocket 与 Agent 交互，触发 `action_confirm` / `action_ask_user`。
+- 聊天：通过 WebSocket 与 Agent 交互，触发 `action_ask_user`。
 
 ## 5. 额外建议
 

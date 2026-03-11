@@ -45,6 +45,7 @@ def try_get_subject(token: str) -> str | None:
 
     try:
         payload = decode_access_token(token)
-        return str(payload.get("sub"))
+        sub = payload.get("sub")
+        return str(sub) if sub is not None else None
     except JWTError:
         return None

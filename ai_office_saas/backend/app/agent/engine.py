@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Awaitable, Callable
 
 from app.adapters.protocols import LLMProvider, OfficeAPIProvider, StorageProvider
@@ -10,6 +11,7 @@ from app.agent.state import AgentPhase, AgentState
 from app.agent.tool_registry import ToolRegistry
 
 Emitter = Callable[[dict], Awaitable[None]]
+logger = logging.getLogger(__name__)
 
 
 class AgentEngine:
@@ -46,6 +48,7 @@ class AgentEngine:
 
     async def start(self, state: AgentState, user_message: str, emit: Emitter) -> None:
         try:
+            logger.info("Agent start", extra={"session_id": state.session_id, "user_id": state.user_id})
             state.task = user_message
             state.phase = AgentPhase.UNDERSTAND
             state.messages.append({"role": "user", "content": user_message})
@@ -65,7 +68,12 @@ class AgentEngine:
                         "payload": {"action": "need_file"},
                     }
                 )
-                await event.wait()
+                try:
+                    await asyncio.wait_for(event.wait(), timeout=300)
+                except asyncio.TimeoutError:
+                    await emit({"type": "error", "message": "等待用户响应超时，任务已终止"})
+                    state.phase = AgentPhase.ERROR
+                    return
 
             state.phase = AgentPhase.EXECUTE
             for i in range(self.max_steps):
@@ -79,7 +87,11 @@ class AgentEngine:
                     break
 
                 if decision.success:
-                    tool_args = json.loads(decision.content) if decision.content else {}
+                    try:
+                        tool_args = json.loads(decision.content) if decision.content else {}
+                    except json.JSONDecodeError:
+                        await emit({"type": "error", "message": f"LLM 返回的工具参数无法解析: {decision.content}"})
+                        break
                     result = await self.tool_registry.dispatch(
                         decision.tool_name,
                         {**tool_args, "user_id": state.user_id},
@@ -89,6 +101,11 @@ class AgentEngine:
             summary = await self.llm.generate("请给出当前任务总结", {"steps": state.step_count})
             await emit({"type": "message", "message": summary})
             state.phase = AgentPhase.DONE
+            logger.info("Agent finished", extra={"session_id": state.session_id, "user_id": state.user_id})
+        except Exception as e:
+            state.phase = AgentPhase.ERROR
+            logger.error("Agent failed", exc_info=e)
+            raise
         finally:
             await self._pop_resume_event(state)
 

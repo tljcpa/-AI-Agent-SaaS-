@@ -24,7 +24,8 @@ export default function ChatBox({ token }: Props) {
 
   const wsUrl = useMemo(() => {
     const sid = sessionId ? `?session_id=${sessionId}` : ''
-    return `ws://localhost:8000/api/chat/ws${sid}`
+    const wsBase = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000'
+    return `${wsBase}/api/chat/ws${sid}`
   }, [sessionId])
 
   useEffect(() => {
@@ -71,16 +72,6 @@ export default function ChatBox({ token }: Props) {
             <div className="inline-block max-w-[80%] rounded px-3 py-2 bg-slate-100 text-sm">
               <p className="font-semibold text-xs mb-1">{m.type}</p>
               <p>{m.message}</p>
-              {m.type === 'action_confirm' && m.payload?.action && (
-                <div className="mt-2 space-x-2">
-                  <button className="px-2 py-1 bg-green-600 text-white rounded" onClick={() => replyAction(m.payload!.action!, 'confirm')}>
-                    确认
-                  </button>
-                  <button className="px-2 py-1 bg-red-500 text-white rounded" onClick={() => replyAction(m.payload!.action!, 'cancel')}>
-                    取消
-                  </button>
-                </div>
-              )}
               {m.type === 'action_ask_user' && m.payload?.action && (
                 <div className="mt-2">
                   <button className="px-2 py-1 bg-blue-600 text-white rounded" onClick={() => replyAction(m.payload!.action!, '已上传')}>

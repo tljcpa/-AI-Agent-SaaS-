@@ -10,8 +10,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 if [[ -n "${NPM_REGISTRY:-}" ]]; then
-  echo "[INFO] 设置 npm registry: $NPM_REGISTRY"
-  npm config set registry "$NPM_REGISTRY"
+  echo "[INFO] 使用指定 npm registry 安装: $NPM_REGISTRY"
+  npm install --registry "$NPM_REGISTRY"
+  exit 0
 fi
 
 if [[ -n "${NPM_CACHE_DIR:-}" ]]; then

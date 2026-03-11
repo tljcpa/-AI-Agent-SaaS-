@@ -22,18 +22,12 @@ def _build_fernet() -> Fernet:
     return Fernet(dev_key)
 
 
-_FERNET: Fernet | None = None
+_FERNET: Fernet = _build_fernet()
 
 
 def encrypt_token(plaintext: str) -> str:
-    global _FERNET
-    if _FERNET is None:
-        _FERNET = _build_fernet()
     return _FERNET.encrypt(plaintext.encode("utf-8")).decode("utf-8")
 
 
 def decrypt_token(ciphertext: str) -> str:
-    global _FERNET
-    if _FERNET is None:
-        _FERNET = _build_fernet()
     return _FERNET.decrypt(ciphertext.encode("utf-8")).decode("utf-8")

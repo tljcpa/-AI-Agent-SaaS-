@@ -11,7 +11,6 @@ from app.adapters.ms_auth import MSAuthService
 
 
 def _col_letter(n: int) -> str:
-    """将列号（1-based）转为 Excel 列字母，支持 AA/AB 等双字母列。"""
     result = ""
     while n:
         n, remainder = divmod(n - 1, 26)
@@ -20,58 +19,63 @@ def _col_letter(n: int) -> str:
 
 
 class GraphOfficeProvider:
-    def __init__(self, auth_service: MSAuthService) -> None:
+    def __init__(self, auth_service: MSAuthService, http_client: httpx.AsyncClient) -> None:
         self.auth_service = auth_service
+        self.http_client = http_client
 
     async def _headers(self, user_id: int) -> dict[str, str]:
         token = await self.auth_service.get_valid_access_token(user_id)
         return {"Authorization": f"Bearer {token}"}
 
     async def read_word_content(self, user_id: int, file_id: str) -> str:
+        headers = await self._headers(user_id)
         url = f"https://graph.microsoft.com/v1.0/me/drive/items/{file_id}/content"
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.get(url, headers=await self._headers(user_id))
-            resp.raise_for_status()
+        resp = await self.http_client.get(url, headers=headers)
+        resp.raise_for_status()
         doc = Document(BytesIO(resp.content))
         return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
 
     async def format_word_document(self, user_id: int, file_id: str, style_instructions: str) -> str:
+        headers = await self._headers(user_id)
         url = f"https://graph.microsoft.com/v1.0/me/drive/items/{file_id}/content"
-        async with httpx.AsyncClient(timeout=60) as client:
-            download = await client.get(url, headers=await self._headers(user_id))
-            download.raise_for_status()
+        download = await self.http_client.get(url, headers=headers)
+        download.raise_for_status()
 
-            doc = Document(BytesIO(download.content))
-            for para in doc.paragraphs:
-                if para.text.strip().startswith("#"):
-                    para.style = "Heading 1"
-                elif "标题" in style_instructions:
-                    para.style = "Heading 2" if len(para.text) < 24 else para.style
-                for run in para.runs:
-                    if "字体" in style_instructions:
-                        run.font.name = "Calibri"
+        doc = Document(BytesIO(download.content))
+        for para in doc.paragraphs:
+            if para.text.strip().startswith("#"):
+                para.style = "Heading 1"
+            elif "标题" in style_instructions:
+                para.style = "Heading 2" if len(para.text) < 24 else para.style
+            for run in para.runs:
+                if "字体" in style_instructions:
+                    run.font.name = "Calibri"
 
-            out = BytesIO()
-            doc.save(out)
-            out.seek(0)
+        out = BytesIO()
+        doc.save(out)
+        out.seek(0)
 
-            upload = await client.put(url, headers=await self._headers(user_id), content=out.read())
-            upload.raise_for_status()
+        upload = await self.http_client.put(url, headers=headers, content=out.read())
+        upload.raise_for_status()
         return f"Word 文档 {file_id} 已完成样式更新"
 
     async def read_excel_data(self, user_id: int, file_id: str, sheet_name: str) -> str:
+        headers = await self._headers(user_id)
         url = (
             "https://graph.microsoft.com/v1.0/me/drive/items/"
             f"{file_id}/workbook/worksheets/{sheet_name}/usedRange"
         )
-        async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.get(url, headers=await self._headers(user_id))
-            resp.raise_for_status()
-            payload = resp.json()
+        resp = await self.http_client.get(url, headers=headers)
+        resp.raise_for_status()
+        payload = resp.json()
         values = payload.get("values", [])
         return "\n".join([", ".join(map(str, row)) for row in values])
 
     async def write_excel_data(self, user_id: int, file_id: str, sheet_name: str, data: list[list]) -> str:
+        if not data:
+            return "Excel 数据为空，跳过写入"
+
+        headers = await self._headers(user_id)
         range_url = (
             "https://graph.microsoft.com/v1.0/me/drive/items/"
             f"{file_id}/workbook/worksheets/{sheet_name}/range(address='A1')"
@@ -80,28 +84,23 @@ class GraphOfficeProvider:
             "https://graph.microsoft.com/v1.0/me/drive/items/"
             f"{file_id}/workbook/worksheets/{sheet_name}/charts/add"
         )
-        num_cols = len(data[0]) if data else 1
+        num_cols = len(data[0])
         end_col = _col_letter(num_cols)
         source_data = f"{sheet_name}!A1:{end_col}{max(2, len(data))}"
 
-        async with httpx.AsyncClient(timeout=60) as client:
-            range_resp = await client.patch(
-                range_url,
-                headers=await self._headers(user_id),
-                json={"values": data},
-            )
-            range_resp.raise_for_status()
-            chart_resp = await client.post(
-                chart_url,
-                headers=await self._headers(user_id),
-                json={
-                    "type": "ColumnClustered",
-                    "sourceData": source_data,
-                    "seriesBy": "Auto",
-                },
-            )
-            if chart_resp.status_code >= 400 and chart_resp.status_code != 409:
-                chart_resp.raise_for_status()
+        range_resp = await self.http_client.patch(
+            range_url,
+            headers=headers,
+            json={"values": data},
+        )
+        range_resp.raise_for_status()
+        chart_resp = await self.http_client.post(
+            chart_url,
+            headers=headers,
+            json={"type": "ColumnClustered", "sourceData": source_data, "seriesBy": "Auto"},
+        )
+        if chart_resp.status_code >= 400 and chart_resp.status_code != 409:
+            chart_resp.raise_for_status()
         return f"Excel {sheet_name} 写入 {len(data)} 行并尝试更新图表"
 
     async def format_document(self, user_id: int, file_path: str, style: str) -> str:

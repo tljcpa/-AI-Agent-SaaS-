@@ -7,8 +7,6 @@ from typing import Any, Protocol
 
 @dataclass(slots=True)
 class ToolSchema:
-    """工具定义，供 LLM function-calling 使用。"""
-
     name: str
     description: str
     parameters: dict[str, Any]
@@ -16,8 +14,6 @@ class ToolSchema:
 
 @dataclass(slots=True)
 class ToolCallResult:
-    """单次工具调用结果。"""
-
     tool_name: str
     success: bool
     content: str
@@ -25,38 +21,25 @@ class ToolCallResult:
 
 
 class StorageProvider(Protocol):
-    """文件存储协议，必须按 user_id 做沙箱隔离。"""
-
-    async def save_file(self, user_id: int, filename: str, content: bytes) -> str:
-        ...
-
-    async def list_files(self, user_id: int) -> list[str]:
-        ...
-
-    async def read_text(self, user_id: int, relative_path: str) -> str:
-        ...
+    async def save_file(self, user_id: int, filename: str, content: bytes) -> str: ...
+    async def list_files(self, user_id: int) -> list[str]: ...
+    async def read_text(self, user_id: int, relative_path: str) -> str: ...
 
 
 class LLMProvider(Protocol):
-    """大模型调用协议。"""
-
-    async def generate(self, prompt: str, context: dict | None = None) -> str:
-        ...
-
+    async def generate(self, prompt: str, context: dict | None = None) -> str: ...
     async def tool_call(
         self,
         messages: list[dict[str, Any]],
         tools: list[ToolSchema],
         context: dict[str, Any] | None = None,
-    ) -> ToolCallResult:
-        ...
+    ) -> ToolCallResult: ...
 
 
 class OfficeAPIProvider(Protocol):
-    """办公能力协议（文档排版、报表分析等）。"""
-
-    async def format_document(self, user_id: int, file_path: str, style: str) -> str:
-        ...
-
-    async def analyze_report(self, user_id: int, file_path: str) -> str:
-        ...
+    async def read_word_content(self, user_id: int, file_id: str) -> str: ...
+    async def format_word_document(self, user_id: int, file_id: str, style_instructions: str) -> str: ...
+    async def read_excel_data(self, user_id: int, file_id: str, sheet_name: str) -> str: ...
+    async def write_excel_data(self, user_id: int, file_id: str, sheet_name: str, data: list) -> str: ...
+    async def format_document(self, user_id: int, file_path: str, style: str) -> str: ...
+    async def analyze_report(self, user_id: int, file_path: str) -> str: ...

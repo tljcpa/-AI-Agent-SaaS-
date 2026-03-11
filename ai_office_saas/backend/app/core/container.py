@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import httpx
+
 from app.adapters.llm_openai_compat import OpenAICompatLLMProvider
 from app.adapters.llm_zhipu import ZhipuLLMProvider
 from app.adapters.ms_auth import MSAuthService
@@ -21,18 +23,18 @@ class AppContainer:
     storage: StorageProvider
     llm: LLMProvider
     office: OfficeAPIProvider
+    auth_service: MSAuthService
     agent_engine: AgentEngine
     tool_registry: ToolRegistry
 
 
 class ProviderFactory:
     @staticmethod
-    def create_storage(settings: Settings) -> StorageProvider:
+    def create_storage(settings: Settings, auth_service: MSAuthService) -> StorageProvider:
         if settings.storage.type == "local":
             return LocalStorageProvider(base_path=settings.storage.base_path)
         if settings.storage.type == "onedrive":
-            auth = MSAuthService(settings.ms_graph)
-            return OneDriveStorageProvider(auth_service=auth, root_path=settings.storage.onedrive_root)
+            return OneDriveStorageProvider(auth_service=auth_service, http_client=auth_service.http_client, root_path=settings.storage.onedrive_root)
         raise ValueError(f"不支持的 storage provider: {settings.storage.type}")
 
     @staticmethod
@@ -48,19 +50,19 @@ class ProviderFactory:
         raise ValueError(f"不支持的 llm provider: {settings.llm.provider}")
 
     @staticmethod
-    def create_office(settings: Settings) -> OfficeAPIProvider:
+    def create_office(settings: Settings, auth_service: MSAuthService) -> OfficeAPIProvider:
         if settings.office.provider == "e5_mock":
             return E5OfficeProvider()
         if settings.office.provider == "graph":
-            auth = MSAuthService(settings.ms_graph)
-            return GraphOfficeProvider(auth_service=auth)
+            return GraphOfficeProvider(auth_service=auth_service, http_client=auth_service.http_client)
         raise ValueError(f"不支持的 office provider: {settings.office.provider}")
 
 
-def build_container(settings: Settings) -> AppContainer:
-    storage = ProviderFactory.create_storage(settings)
+def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppContainer:
+    auth_service = MSAuthService(settings.ms_graph, http_client=http_client)
+    storage = ProviderFactory.create_storage(settings, auth_service)
     llm = ProviderFactory.create_llm(settings)
-    office = ProviderFactory.create_office(settings)
+    office = ProviderFactory.create_office(settings, auth_service)
     tool_registry = ToolRegistry()
 
     tool_registry.register(
@@ -113,4 +115,11 @@ def build_container(settings: Settings) -> AppContainer:
     )
 
     engine = AgentEngine(llm=llm, storage=storage, office=office, tool_registry=tool_registry)
-    return AppContainer(storage=storage, llm=llm, office=office, agent_engine=engine, tool_registry=tool_registry)
+    return AppContainer(
+        storage=storage,
+        llm=llm,
+        office=office,
+        auth_service=auth_service,
+        agent_engine=engine,
+        tool_registry=tool_registry,
+    )

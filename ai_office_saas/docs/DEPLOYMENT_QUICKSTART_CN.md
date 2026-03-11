@@ -86,7 +86,9 @@ app:
     - "https://office.example.com"
 
 security:
-  jwt_secret: "INSECURE_DEV_ONLY_SET_JWT_SECRET_ENV"
+  # 不要在此填写明文密钥，请通过环境变量注入：
+  # export JWT_SECRET=$(openssl rand -hex 32)
+  jwt_secret: "通过 JWT_SECRET 环境变量注入"
   jwt_algorithm: "HS256"
   access_token_expire_minutes: 120
 
@@ -189,7 +191,6 @@ baseURL: 'https://api.example.com/api'
 4. 上传文件（符合类型与大小限制）
 5. 打开聊天，触发 Agent 流程：
    - `start`
-   - `action_confirm`
    - 文件缺失时 `action_ask_user`
 
 ---
@@ -256,6 +257,8 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
     }
 }
 ```
