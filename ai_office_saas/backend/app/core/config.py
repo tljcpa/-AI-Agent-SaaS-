@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from os import getenv
 from pathlib import Path
 from typing import Any
 
@@ -72,4 +73,7 @@ def get_settings() -> Settings:
         raise FileNotFoundError(f"配置文件不存在: {config_path}")
 
     payload: dict[str, Any] = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    env_jwt_secret = getenv("JWT_SECRET")
+    if env_jwt_secret:
+        payload.setdefault("security", {})["jwt_secret"] = env_jwt_secret
     return Settings.model_validate(payload)

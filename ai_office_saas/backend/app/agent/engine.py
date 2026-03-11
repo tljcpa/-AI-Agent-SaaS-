@@ -36,68 +36,76 @@ class AgentEngine:
         async with self._resume_events_lock:
             self._resume_events.pop(key, None)
 
+    @staticmethod
+    def _extract_plan(llm_tip: str) -> list[str]:
+        lines = [line.strip("-• ").strip() for line in llm_tip.splitlines()]
+        candidates = [line for line in lines if line]
+        if len(candidates) >= 3:
+            return candidates[:3]
+        return ["收集资料", "执行办公操作", "输出总结"]
+
     async def start(self, state: AgentState, user_message: str, emit: Emitter) -> None:
         """启动任务执行。"""
+        try:
+            state.task = user_message
+            state.phase = AgentPhase.UNDERSTAND
+            await emit({"type": "action_progress", "message": "正在理解任务意图..."})
 
-        state.task = user_message
-        state.phase = AgentPhase.UNDERSTAND
-        await emit({"type": "action_progress", "message": "正在理解任务意图..."})
+            llm_tip = await self.llm.generate(f"请为以下任务生成三步执行计划：{user_message}")
+            state.phase = AgentPhase.PLAN
+            state.plan = self._extract_plan(llm_tip)
+            await emit({"type": "message", "message": llm_tip})
+            await emit({"type": "action_progress", "message": f"计划已生成：{state.plan}"})
 
-        llm_tip = await self.llm.generate(f"请为以下任务生成三步执行计划：{user_message}")
-        state.phase = AgentPhase.PLAN
-        state.plan = ["收集资料", "执行办公操作", "输出总结"]
-        await emit({"type": "message", "message": llm_tip})
-        await emit({"type": "action_progress", "message": f"计划已生成：{state.plan}"})
-
-        state.phase = AgentPhase.WAIT_USER
-        state.waiting_action = "confirm_plan"
-        resume_event = await self._register_resume_event(state)
-        await emit(
-            {
-                "type": "action_confirm",
-                "message": "是否确认执行该计划？",
-                "payload": {"action": "confirm_plan"},
-            }
-        )
-        await resume_event.wait()
-
-        decision = state.context.get("confirm_plan", "").lower()
-        if decision != "confirm":
-            state.phase = AgentPhase.DONE
-            await emit({"type": "message", "message": "任务已取消。你可以重新描述需求。"})
-            await self._pop_resume_event(state)
-            return
-
-        state.phase = AgentPhase.EXECUTE
-        await emit({"type": "action_progress", "message": "开始执行任务步骤..."})
-
-        files = self.storage.list_files(state.user_id)
-        if not files:
             state.phase = AgentPhase.WAIT_USER
-            state.waiting_action = "need_file"
+            state.waiting_action = "confirm_plan"
             resume_event = await self._register_resume_event(state)
             await emit(
                 {
-                    "type": "action_ask_user",
-                    "message": "未检测到可用文件，请上传后输入“已上传”继续。",
-                    "payload": {"action": "need_file"},
+                    "type": "action_confirm",
+                    "message": "是否确认执行该计划？",
+                    "payload": {"action": "confirm_plan"},
                 }
             )
             await resume_event.wait()
+
+            decision = state.context.get("confirm_plan", "").lower()
+            if decision != "confirm":
+                state.phase = AgentPhase.DONE
+                await emit({"type": "message", "message": "任务已取消。你可以重新描述需求。"})
+                return
+
+            state.phase = AgentPhase.EXECUTE
+            await emit({"type": "action_progress", "message": "开始执行任务步骤..."})
+
             files = self.storage.list_files(state.user_id)
+            if not files:
+                state.phase = AgentPhase.WAIT_USER
+                state.waiting_action = "need_file"
+                resume_event = await self._register_resume_event(state)
+                await emit(
+                    {
+                        "type": "action_ask_user",
+                        "message": "未检测到可用文件，请上传后输入“已上传”继续。",
+                        "payload": {"action": "need_file"},
+                    }
+                )
+                await resume_event.wait()
+                files = self.storage.list_files(state.user_id)
 
-        target = files[0]
-        await emit({"type": "action_progress", "message": f"正在处理文件：{target}"})
-        format_result = await self.office.format_document(state.user_id, target, "商务简洁")
-        report = await self.office.analyze_report(state.user_id, target)
-        summary = await self.llm.generate("请总结以下结果", {"format": format_result, "report": report})
+            target = files[0]
+            await emit({"type": "action_progress", "message": f"正在处理文件：{target}"})
+            format_result = await self.office.format_document(state.user_id, target, "商务简洁")
+            report = await self.office.analyze_report(state.user_id, target)
+            summary = await self.llm.generate("请总结以下结果", {"format": format_result, "report": report})
 
-        state.phase = AgentPhase.DONE
-        await emit({"type": "message", "message": format_result})
-        await emit({"type": "message", "message": report})
-        await emit({"type": "message", "message": summary})
-        await emit({"type": "action_progress", "message": "任务执行完成。"})
-        await self._pop_resume_event(state)
+            state.phase = AgentPhase.DONE
+            await emit({"type": "message", "message": format_result})
+            await emit({"type": "message", "message": report})
+            await emit({"type": "message", "message": summary})
+            await emit({"type": "action_progress", "message": "任务执行完成。"})
+        finally:
+            await self._pop_resume_event(state)
 
     async def resume(self, state: AgentState, action: str, value: str, emit: Emitter) -> None:
         """恢复挂起状态。"""
