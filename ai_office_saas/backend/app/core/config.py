@@ -11,8 +11,6 @@ from pydantic import BaseModel, Field
 
 
 class AppConfig(BaseModel):
-    """应用基础配置。"""
-
     name: str = "AI Office SaaS"
     host: str = "0.0.0.0"
     port: int = 8000
@@ -20,54 +18,54 @@ class AppConfig(BaseModel):
 
 
 class SecurityConfig(BaseModel):
-    """JWT 鉴权相关配置。"""
-
     jwt_secret: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 120
 
 
 class StorageConfig(BaseModel):
-    """存储提供器配置。"""
-
     type: str = "local"
     base_path: str = "./data/users"
+    onedrive_root: str = "/"
 
 
 class LLMConfig(BaseModel):
-    """大模型提供器配置。"""
-
     provider: str = "zhipu_mock"
     api_key: str = "mock-key"
+    base_url: str = "https://api.openai.com/v1"
+    model: str = "gpt-4o-mini"
 
 
 class OfficeConfig(BaseModel):
-    """办公 API 提供器配置。"""
-
     provider: str = "e5_mock"
 
 
 class DatabaseConfig(BaseModel):
-    """数据库配置。"""
-
     url: str = "sqlite:///./ai_office.db"
 
 
-class Settings(BaseModel):
-    """完整配置对象。"""
+class MSGraphConfig(BaseModel):
+    tenant_id: str = "common"
+    client_id: str = ""
+    client_secret: str = ""
+    redirect_uri: str = "http://localhost:8000/api/oauth/callback"
+    scopes: list[str] = Field(
+        default_factory=lambda: ["Files.ReadWrite", "Sites.ReadWrite.All", "offline_access"]
+    )
 
+
+class Settings(BaseModel):
     app: AppConfig
     security: SecurityConfig
     storage: StorageConfig
     llm: LLMConfig
     office: OfficeConfig
     database: DatabaseConfig
+    ms_graph: MSGraphConfig = Field(default_factory=MSGraphConfig)
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """读取并缓存配置文件，避免重复 IO。"""
-
     config_path = Path(__file__).resolve().parents[2] / "config.yaml"
     if not config_path.exists():
         raise FileNotFoundError(f"配置文件不存在: {config_path}")

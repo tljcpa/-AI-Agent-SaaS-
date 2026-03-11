@@ -30,3 +30,5 @@ class AgentState:
     current_step: int = 0
     waiting_action: str | None = None
     context: dict[str, Any] = field(default_factory=dict)
+    messages: list[dict[str, str]] = field(default_factory=list)
+    step_count: int = 0

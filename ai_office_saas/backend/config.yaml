@@ -9,13 +9,26 @@ security:
   jwt_algorithm: "HS256"
   access_token_expire_minutes: 120
 storage:
-  type: "local"
+  type: "local" # local | onedrive
   base_path: "./data/users"
+  onedrive_root: "ai-office-saas"
 llm:
-  provider: "zhipu_mock"
+  provider: "zhipu_mock" # zhipu_mock | openai_compat
   api_key: "mock-key"
+  base_url: "https://api.openai.com/v1"
+  model: "gpt-4o-mini"
 office:
-  provider: "e5_mock"
+  provider: "e5_mock" # e5_mock | graph
 
 database:
   url: "sqlite:///./ai_office.db"
+
+ms_graph:
+  tenant_id: "common"
+  client_id: ""
+  client_secret: ""
+  redirect_uri: "http://localhost:8000/api/oauth/callback"
+  scopes:
+    - "Files.ReadWrite"
+    - "Sites.ReadWrite.All"
+    - "offline_access"
