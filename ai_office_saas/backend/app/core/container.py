@@ -71,7 +71,7 @@ def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppCo
             description="读取 Word 文本内容",
             parameters={"type": "object", "properties": {"file_id": {"type": "string"}}, "required": ["file_id"]},
         ),
-        lambda user_id, file_id: office.read_word_content(user_id, file_id),
+        lambda *, user_id, file_id: office.read_word_content(user_id, file_id),
     )
     tool_registry.register(
         ToolSchema(
@@ -83,7 +83,7 @@ def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppCo
                 "required": ["file_id", "sheet_name"],
             },
         ),
-        lambda user_id, file_id, sheet_name: office.read_excel_data(user_id, file_id, sheet_name),
+        lambda *, user_id, file_id, sheet_name: office.read_excel_data(user_id, file_id, sheet_name),
     )
     tool_registry.register(
         ToolSchema(
@@ -95,7 +95,7 @@ def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppCo
                 "required": ["file_id", "style_instructions"],
             },
         ),
-        lambda user_id, file_id, style_instructions: office.format_word_document(user_id, file_id, style_instructions),
+        lambda *, user_id, file_id, style_instructions: office.format_word_document(user_id, file_id, style_instructions),
     )
     tool_registry.register(
         ToolSchema(
@@ -111,7 +111,7 @@ def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppCo
                 "required": ["file_id", "sheet_name", "data"],
             },
         ),
-        lambda user_id, file_id, sheet_name, data: office.write_excel_data(user_id, file_id, sheet_name, data),
+        lambda *, user_id, file_id, sheet_name, data: office.write_excel_data(user_id, file_id, sheet_name, data),
     )
 
     engine = AgentEngine(llm=llm, storage=storage, office=office, tool_registry=tool_registry)

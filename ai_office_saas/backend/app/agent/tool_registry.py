@@ -20,8 +20,15 @@ class ToolRegistry:
     def list(self) -> list[ToolSchema]:
         return list(self._tools.values())
 
-    async def dispatch(self, tool_name: str, arguments: dict) -> str:
+    def get_schema(self, tool_name: str) -> ToolSchema:
+        schema = self._tools.get(tool_name)
+        if schema is None:
+            raise KeyError(f"tool not found: {tool_name}")
+        return schema
+
+    async def dispatch(self, tool_name: str, user_id: int, arguments: dict) -> str:
         fn = self._handlers.get(tool_name)
         if fn is None:
             raise KeyError(f"tool not found: {tool_name}")
-        return await fn(**arguments)
+        clean_args = {k: v for k, v in arguments.items() if k != "user_id"}
+        return await fn(user_id=user_id, **clean_args)

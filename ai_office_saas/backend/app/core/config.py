@@ -5,6 +5,7 @@ from functools import lru_cache
 from os import getenv
 from pathlib import Path
 from typing import Any
+import warnings
 
 import yaml
 from pydantic import BaseModel, Field
@@ -80,6 +81,12 @@ def get_settings() -> Settings:
 
     settings = Settings.model_validate(payload)
     app_env = getenv("APP_ENV", "development")
+    jwt_secret_bytes_len = len(settings.security.jwt_secret.encode("utf-8"))
+    if jwt_secret_bytes_len < 32:
+        if app_env == "production":
+            raise RuntimeError("jwt_secret 强度不足，生产环境要求至少 32 字节")
+        warnings.warn("jwt_secret 强度不足，建议至少使用 32 字节随机密钥", stacklevel=2)
+
     if settings.security.jwt_secret == "INSECURE_DEV_ONLY_SET_JWT_SECRET_ENV" and app_env != "development":
         raise RuntimeError("生产环境必须通过 JWT_SECRET 环境变量设置强密钥")
     return settings

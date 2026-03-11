@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 
@@ -45,8 +46,16 @@ async def upload_file(
     user_id: int = Depends(get_current_user_id),
     storage: StorageProvider = Depends(get_storage),
 ):
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="文件名不能为空")
+    filename = file.filename or ""
+    filename_bytes_len = len(filename.encode("utf-8"))
+    if filename_bytes_len < 1 or filename_bytes_len > 255:
+        raise HTTPException(status_code=400, detail="文件名长度必须在 1 到 255 字节之间")
+    if "\x00" in filename:
+        raise HTTPException(status_code=400, detail="文件名不能包含空字节")
+    if filename.startswith("."):
+        raise HTTPException(status_code=400, detail="文件名不能以 . 开头")
+    if re.fullmatch(r"^[\w\-. ]+$", filename) is None:
+        raise HTTPException(status_code=400, detail="文件名包含非法字符")
 
     content = await file.read()
     if len(content) > MAX_UPLOAD_BYTES:
@@ -59,12 +68,12 @@ async def upload_file(
     if magic_list and not any(content.startswith(magic) for magic in magic_list):
         raise HTTPException(status_code=400, detail="文件内容与声明类型不符")
 
-    relative_path = await storage.save_file(user_id, file.filename, content)
+    relative_path = await storage.save_file(user_id, filename, content)
     with session_scope() as db:
-        db_file = UserFile(user_id=user_id, filename=file.filename, path=relative_path)
+        db_file = UserFile(user_id=user_id, filename=filename, path=relative_path)
         db.add(db_file)
-    logger.info("File uploaded", extra={"user_id": user_id, "filename": file.filename})
-    return {"filename": file.filename, "path": relative_path}
+    logger.info("File uploaded", extra={"user_id": user_id, "filename": filename})
+    return {"filename": filename, "path": relative_path}
 
 
 @router.get("")

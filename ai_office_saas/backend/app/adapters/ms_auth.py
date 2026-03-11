@@ -49,10 +49,12 @@ class MSAuthService:
         logger.info("OAuth code exchange completed", extra={"user_id": user_id})
 
     async def get_valid_access_token(self, user_id: int) -> str:
-        for _ in range(5):
+        for retry in range(5):
             token_row, should_wait = await asyncio.to_thread(self._claim_or_get_token_sync, user_id)
             if should_wait:
-                await asyncio.sleep(1)
+                wait_seconds = min(0.1 * (2 ** retry), 2.0)
+                logger.debug("OAuth token refresh in progress, waiting", extra={"user_id": user_id, "retry": retry + 1, "wait_seconds": wait_seconds})
+                await asyncio.sleep(wait_seconds)
                 continue
             if token_row is None:
                 raise ValueError("用户尚未授权 OneDrive")

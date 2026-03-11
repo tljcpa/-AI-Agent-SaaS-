@@ -26,7 +26,7 @@ class AgentState:
     user_id: int
     task: str = ""
     phase: AgentPhase = AgentPhase.IDLE
-    plan: list[str] = field(default_factory=list)
+    plan: list[str] = field(default_factory=list)  # 预留字段，暂未使用
     current_step: int = 0
     waiting_action: str | None = None
     context: dict[str, Any] = field(default_factory=dict)
