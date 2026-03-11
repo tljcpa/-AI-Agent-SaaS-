@@ -44,6 +44,6 @@ class ZhipuLLMProvider:
         return ToolCallResult(
             tool_name=selected.name,
             success=True,
-            content=f"调用工具 {selected.name}（mock）",
+            content="{}",
             raw={"messages": len(messages), "context": context or {}},
         )
