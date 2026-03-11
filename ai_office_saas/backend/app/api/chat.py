@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from time import time
 from uuid import uuid4
 
@@ -12,8 +13,8 @@ from app.agent.state import AgentState
 from app.core.security import try_get_subject
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+logger = logging.getLogger(__name__)
 
-# 会话态缓存：生产环境建议替换为 Redis。
 session_states: dict[str, AgentState] = {}
 session_last_seen: dict[str, float] = {}
 MAX_SESSION_STATES = 1000
@@ -52,6 +53,7 @@ async def websocket_chat(websocket: WebSocket):
 
     session_id = websocket.query_params.get("session_id") or str(uuid4())
     _cleanup_session_states()
+    logger.info("WebSocket connected", extra={"session_id": session_id})
 
     state: AgentState | None = None
     engine = get_agent_engine(websocket)
@@ -64,7 +66,11 @@ async def websocket_chat(websocket: WebSocket):
     running_task: asyncio.Task | None = None
     try:
         while True:
-            incoming = await websocket.receive_json()
+            try:
+                incoming = await websocket.receive_json()
+            except Exception:
+                await emit({"type": "error", "message": "消息格式错误，请发送合法 JSON"})
+                continue
             kind = incoming.get("type")
 
             if state is None:
@@ -76,12 +82,12 @@ async def websocket_chat(websocket: WebSocket):
                 auth_token = str(incoming.get("token", "")).strip() or token
                 sub = try_get_subject(auth_token)
                 if not sub or not sub.isdigit():
+                    logger.warning("WebSocket auth failed", extra={"session_id": session_id})
                     await emit({"type": "error", "message": "鉴权失败"})
                     await websocket.close(code=1008)
                     return
 
                 current_user_id = int(sub)
-                _cleanup_session_states()
                 state = session_states.get(session_id)
                 if state is None:
                     state = AgentState(session_id=session_id, user_id=current_user_id)
@@ -104,7 +110,17 @@ async def websocket_chat(websocket: WebSocket):
                 if running_task and not running_task.done():
                     await emit({"type": "error", "message": "当前已有任务在执行"})
                     continue
+
+                def _on_task_done(task: asyncio.Task) -> None:
+                    if task.cancelled():
+                        return
+                    exc = task.exception()
+                    if exc:
+                        logger.error("Agent task failed", exc_info=exc)
+
+                logger.info("Agent task started", extra={"session_id": session_id, "user_id": state.user_id})
                 running_task = asyncio.create_task(engine.start(state, text, emit))
+                running_task.add_done_callback(_on_task_done)
 
             elif kind == "user_action":
                 session_last_seen[session_id] = time()
@@ -119,4 +135,13 @@ async def websocket_chat(websocket: WebSocket):
                 await emit({"type": "error", "message": f"不支持的消息类型: {kind}"})
 
     except WebSocketDisconnect:
+        logger.info("WebSocket disconnected", extra={"session_id": session_id})
+        if running_task and not running_task.done():
+            running_task.cancel()
         return
+    except Exception as e:
+        logger.error("WebSocket internal error", exc_info=e)
+        try:
+            await emit({"type": "error", "message": f"服务端内部错误: {e}"})
+        except Exception:
+            pass

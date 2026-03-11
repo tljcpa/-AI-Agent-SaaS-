@@ -49,9 +49,7 @@ class MSGraphConfig(BaseModel):
     client_id: str = ""
     client_secret: str = ""
     redirect_uri: str = "http://localhost:8000/api/oauth/callback"
-    scopes: list[str] = Field(
-        default_factory=lambda: ["Files.ReadWrite", "offline_access"]
-    )
+    scopes: list[str] = Field(default_factory=lambda: ["Files.ReadWrite", "offline_access"])
 
 
 class Settings(BaseModel):
@@ -66,9 +64,14 @@ class Settings(BaseModel):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    config_path = Path(__file__).resolve().parents[2] / "config.yaml"
+    """读取并缓存配置；开发模式下修改 config.yaml 后需调用 reset_settings_cache() 刷新。"""
+
+    base_dir = Path(__file__).resolve().parents[2]
+    config_path = base_dir / "config.yaml"
     if not config_path.exists():
-        raise FileNotFoundError(f"配置文件不存在: {config_path}")
+        config_path = base_dir / "config.yaml.example"
+    if not config_path.exists():
+        raise FileNotFoundError(f"配置文件不存在: {base_dir / 'config.yaml'}")
 
     payload: dict[str, Any] = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     env_jwt_secret = getenv("JWT_SECRET")
@@ -77,9 +80,12 @@ def get_settings() -> Settings:
 
     settings = Settings.model_validate(payload)
     app_env = getenv("APP_ENV", "development")
-    if (
-        settings.security.jwt_secret == "INSECURE_DEV_ONLY_SET_JWT_SECRET_ENV"
-        and app_env != "development"
-    ):
+    if settings.security.jwt_secret == "INSECURE_DEV_ONLY_SET_JWT_SECRET_ENV" and app_env != "development":
         raise RuntimeError("生产环境必须通过 JWT_SECRET 环境变量设置强密钥")
     return settings
+
+
+def reset_settings_cache() -> None:
+    """供开发模式热更新时清空 lru_cache。"""
+
+    get_settings.cache_clear()

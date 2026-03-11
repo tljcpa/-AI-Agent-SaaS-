@@ -9,6 +9,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 REQ_FILE="$ROOT_DIR/requirements.txt"
 
+if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+  echo "[ERROR] 请先激活 Python 虚拟环境后再运行此脚本"
+  echo "  python3 -m venv .venv && source .venv/bin/activate"
+  exit 1
+fi
+
 if [[ ! -f "$REQ_FILE" ]]; then
   echo "[ERROR] requirements.txt 不存在: $REQ_FILE"
   exit 1

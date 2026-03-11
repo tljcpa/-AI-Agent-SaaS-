@@ -6,13 +6,19 @@ export default function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [error, setError] = useState('')
   const navigate = useNavigate()
 
   const submit = async () => {
-    const endpoint = mode === 'login' ? '/auth/login' : '/auth/register'
-    const res = await api.post(endpoint, { username, password })
-    localStorage.setItem('token', res.data.access_token)
-    navigate('/dashboard')
+    setError('')
+    try {
+      const endpoint = mode === 'login' ? '/auth/login' : '/auth/register'
+      const res = await api.post(endpoint, { username, password })
+      localStorage.setItem('token', res.data.access_token)
+      navigate('/dashboard')
+    } catch (e: any) {
+      setError(e.response?.data?.detail || '请求失败，请重试')
+    }
   }
 
   return (
@@ -27,6 +33,7 @@ export default function Login() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+        {error && <p className="text-red-500 text-sm">{error}</p>}
         <button className="w-full bg-indigo-600 text-white rounded py-2" onClick={submit}>
           {mode === 'login' ? '登录' : '注册'}
         </button>

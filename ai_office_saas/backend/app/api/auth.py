@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException
+from sqlalchemy.exc import IntegrityError
 
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.database import User, session_scope
@@ -18,15 +19,18 @@ class AuthRequest(BaseModel):
 @router.post("/register")
 def register(payload: AuthRequest):
     user_id: int | None = None
-    with session_scope() as db:
-        exists = db.query(User).filter(User.username == payload.username).first()
-        if exists:
-            raise HTTPException(status_code=400, detail="用户名已存在")
+    try:
+        with session_scope() as db:
+            exists = db.query(User).filter(User.username == payload.username).first()
+            if exists:
+                raise HTTPException(status_code=400, detail="用户名已存在")
 
-        user = User(username=payload.username, hashed_password=hash_password(payload.password))
-        db.add(user)
-        db.flush()
-        user_id = user.id
+            user = User(username=payload.username, hashed_password=hash_password(payload.password))
+            db.add(user)
+            db.flush()
+            user_id = user.id
+    except IntegrityError as exc:
+        raise HTTPException(status_code=400, detail="用户名已存在") from exc
 
     if user_id is None:
         raise HTTPException(status_code=500, detail="用户创建失败")

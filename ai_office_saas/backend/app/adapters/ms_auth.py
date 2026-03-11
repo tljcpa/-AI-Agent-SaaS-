@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode
 
@@ -12,10 +13,13 @@ from app.core.config import MSGraphConfig
 from app.core.crypto import decrypt_token, encrypt_token
 from app.models.database import UserOAuthToken, session_scope
 
+logger = logging.getLogger(__name__)
+
 
 class MSAuthService:
-    def __init__(self, config: MSGraphConfig) -> None:
+    def __init__(self, config: MSGraphConfig, http_client: httpx.AsyncClient) -> None:
         self.config = config
+        self.http_client = http_client
         self.authority = f"https://login.microsoftonline.com/{config.tenant_id}/oauth2/v2.0"
 
     def build_authorization_url(self, state: str) -> str:
@@ -38,57 +42,34 @@ class MSAuthService:
             "redirect_uri": self.config.redirect_uri,
             "scope": " ".join(self.config.scopes),
         }
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(f"{self.authority}/token", data=payload)
-            response.raise_for_status()
-            data = response.json()
-        self._save_token(user_id, data)
+        response = await self.http_client.post(f"{self.authority}/token", data=payload)
+        response.raise_for_status()
+        data = response.json()
+        await asyncio.to_thread(self._save_token_sync, user_id, data)
+        logger.info("OAuth code exchange completed", extra={"user_id": user_id})
 
     async def get_valid_access_token(self, user_id: int) -> str:
         for _ in range(5):
-            token_id = 0
-            with session_scope() as db:
-                token = (
-                    db.query(UserOAuthToken)
-                    .filter(UserOAuthToken.user_id == user_id, UserOAuthToken.provider == "onedrive")
-                    .order_by(UserOAuthToken.updated_at.desc())
-                    .first()
-                )
-                if token is None:
-                    raise ValueError("用户尚未授权 OneDrive")
-
-                now = datetime.now(timezone.utc)
-                if token.expires_at > now + timedelta(seconds=60):
-                    return decrypt_token(token.access_token)
-
-                claim_stmt = (
-                    update(UserOAuthToken)
-                    .where(UserOAuthToken.id == token.id, UserOAuthToken.is_refreshing.is_(False))
-                    .values(is_refreshing=True)
-                )
-                claim_result = db.execute(claim_stmt)
-                if claim_result.rowcount == 0:
-                    continue_refresh = True
-                else:
-                    continue_refresh = False
-                    token_id = token.id
-                    refresh_token = decrypt_token(token.refresh_token)
-
-            if continue_refresh:
+            token_row, should_wait = await asyncio.to_thread(self._claim_or_get_token_sync, user_id)
+            if should_wait:
                 await asyncio.sleep(1)
                 continue
+            if token_row is None:
+                raise ValueError("用户尚未授权 OneDrive")
 
+            if token_row["access_token"]:
+                return token_row["access_token"]
+
+            token_id = token_row["id"]
+            refresh_token = token_row["refresh_token"]
             try:
                 data = await self._refresh(refresh_token)
-                self._save_token(user_id, data)
+                await asyncio.to_thread(self._save_token_sync, user_id, data)
+                logger.info("OAuth token refreshed", extra={"user_id": user_id})
                 return str(data["access_token"])
             finally:
-                with session_scope() as clear_db:
-                    clear_db.execute(
-                        update(UserOAuthToken)
-                        .where(UserOAuthToken.id == token_id)
-                        .values(is_refreshing=False)
-                    )
+                if token_id is not None:
+                    await asyncio.to_thread(self._clear_refreshing_sync, token_id)
 
         raise RuntimeError("Token 刷新重试次数已耗尽")
 
@@ -101,12 +82,51 @@ class MSAuthService:
             "redirect_uri": self.config.redirect_uri,
             "scope": " ".join(self.config.scopes),
         }
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(f"{self.authority}/token", data=payload)
-            response.raise_for_status()
-            return response.json()
+        response = await self.http_client.post(f"{self.authority}/token", data=payload)
+        response.raise_for_status()
+        return response.json()
 
-    def _save_token(self, user_id: int, token_payload: dict) -> None:
+    def _claim_or_get_token_sync(self, user_id: int) -> tuple[dict | None, bool]:
+        token_id: int | None = None
+        with session_scope() as db:
+            token = (
+                db.query(UserOAuthToken)
+                .filter(UserOAuthToken.user_id == user_id, UserOAuthToken.provider == "onedrive")
+                .order_by(UserOAuthToken.updated_at.desc())
+                .first()
+            )
+            if token is None:
+                return None, False
+
+            now = datetime.now(timezone.utc)
+            if token.expires_at > now + timedelta(seconds=60):
+                return {"id": token.id, "access_token": decrypt_token(token.access_token), "refresh_token": ""}, False
+
+            claim_stmt = (
+                update(UserOAuthToken)
+                .where(UserOAuthToken.id == token.id, UserOAuthToken.is_refreshing.is_(False))
+                .values(is_refreshing=True)
+            )
+            claim_result = db.execute(claim_stmt)
+            if claim_result.rowcount == 0:
+                return None, True
+
+            token_id = token.id
+            return {
+                "id": token_id,
+                "access_token": "",
+                "refresh_token": decrypt_token(token.refresh_token),
+            }, False
+
+    def _clear_refreshing_sync(self, token_id: int) -> None:
+        with session_scope() as clear_db:
+            clear_db.execute(
+                update(UserOAuthToken)
+                .where(UserOAuthToken.id == token_id)
+                .values(is_refreshing=False)
+            )
+
+    def _save_token_sync(self, user_id: int, token_payload: dict) -> None:
         expires_in = int(token_payload.get("expires_in", 3600))
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
         access_token = encrypt_token(str(token_payload["access_token"]))

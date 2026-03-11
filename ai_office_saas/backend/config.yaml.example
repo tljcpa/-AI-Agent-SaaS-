@@ -5,7 +5,7 @@ app:
   cors_origins:
     - "http://localhost:5173"
 security:
-  jwt_secret: "INSECURE_DEV_ONLY_SET_JWT_SECRET_ENV"
+  jwt_secret: "在此填入强随机密钥或通过 JWT_SECRET 环境变量注入"
   jwt_algorithm: "HS256"
   access_token_expire_minutes: 120
 storage:
@@ -14,7 +14,7 @@ storage:
   onedrive_root: "ai-office-saas"
 llm:
   provider: "zhipu_mock" # zhipu_mock | openai_compat
-  api_key: "mock-key"
+  api_key: "在此填入 LLM API Key"
   base_url: "https://api.openai.com/v1"
   model: "gpt-4o-mini"
 office:
@@ -25,8 +25,8 @@ database:
 
 ms_graph:
   tenant_id: "common"
-  client_id: ""
-  client_secret: ""
+  client_id: "在此填入 Azure 应用 client_id"
+  client_secret: "在此填入 Azure 应用 client_secret"
   redirect_uri: "http://localhost:8000/api/oauth/callback"
   scopes:
     - "Files.ReadWrite"
