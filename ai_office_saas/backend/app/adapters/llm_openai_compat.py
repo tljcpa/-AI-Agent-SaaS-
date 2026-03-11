@@ -62,7 +62,13 @@ class OpenAICompatLLMProvider:
         tool_calls = message.get("tool_calls") or []
         if not tool_calls:
             content = message.get("content", "")
-            return ToolCallResult(tool_name="", success=False, content=content, raw=data)
+            return ToolCallResult(tool_name="", success=False, content=content, tool_arguments="", raw=data)
 
         func = tool_calls[0]["function"]
-        return ToolCallResult(tool_name=func["name"], success=True, content=func.get("arguments", "{}"), raw=data)
+        return ToolCallResult(
+            tool_name=func["name"],
+            success=True,
+            content=message.get("content") or "",
+            tool_arguments=func.get("arguments", "{}"),
+            raw=data,
+        )

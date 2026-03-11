@@ -34,7 +34,7 @@ class ZhipuLLMProvider:
             user_text = str(messages[-1].get("content", "")).lower()
 
         if not tools:
-            return ToolCallResult(tool_name="", success=False, content="无可用工具")
+            return ToolCallResult(tool_name="", success=False, content="无可用工具", tool_arguments="")
 
         selected = tools[0]
         for tool in tools:
@@ -43,15 +43,16 @@ class ZhipuLLMProvider:
                 break
 
         if selected.name in {"read_word_content", "format_word_document"}:
-            content = json.dumps({"file_id": "mock-file-id"})
+            tool_arguments = json.dumps({"file_id": "mock-file-id"})
         elif selected.name in {"read_excel_data", "write_excel_data"}:
-            content = json.dumps({"file_id": "mock-file-id", "sheet_name": "Sheet1", "data": []})
+            tool_arguments = json.dumps({"file_id": "mock-file-id", "sheet_name": "Sheet1", "data": []})
         else:
-            content = json.dumps({"file_id": "mock-file-id"})
+            tool_arguments = json.dumps({"file_id": "mock-file-id"})
 
         return ToolCallResult(
             tool_name=selected.name,
             success=True,
-            content=content,
+            content=f"决定调用工具 {selected.name}",
+            tool_arguments=tool_arguments,
             raw={"messages": len(messages), "context": context or {}},
         )

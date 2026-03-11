@@ -17,6 +17,7 @@ class ToolCallResult:
     tool_name: str
     success: bool
     content: str
+    tool_arguments: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
 
 
