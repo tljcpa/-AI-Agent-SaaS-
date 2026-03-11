@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable
 
 from app.adapters.protocols import LLMProvider, OfficeAPIProvider, StorageProvider
@@ -50,7 +51,7 @@ class AgentEngine:
             state.messages.append({"role": "user", "content": user_message})
             await emit({"type": "action_progress", "message": "进入 ReAct 执行循环..."})
 
-            files = self.storage.list_files(state.user_id)
+            files = await self.storage.list_files(state.user_id)
             if not files:
                 state.phase = AgentPhase.WAIT_USER
                 state.waiting_action = "need_file"
@@ -72,8 +73,16 @@ class AgentEngine:
                 await emit({"type": "action_progress", "message": f"Step {i + 1}: {decision.content}"})
                 state.messages.append({"role": "assistant", "content": decision.content})
 
-                if i >= 1:
+                if not decision.tool_name:
                     break
+
+                if decision.success:
+                    tool_args = json.loads(decision.content) if decision.content else {}
+                    result = await self.tool_registry.dispatch(
+                        decision.tool_name,
+                        {**tool_args, "user_id": state.user_id},
+                    )
+                    state.messages.append({"role": "tool", "content": result})
 
             summary = await self.llm.generate("请给出当前任务总结", {"steps": state.step_count})
             await emit({"type": "message", "message": summary})

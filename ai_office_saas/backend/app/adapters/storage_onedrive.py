@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+from pathlib import PurePosixPath
 
 import httpx
 
@@ -13,39 +14,47 @@ class OneDriveStorageProvider:
         self.auth_service = auth_service
         self.root_path = root_path.strip("/")
 
-    def _headers(self, user_id: int) -> dict[str, str]:
-        token = self.auth_service.get_valid_access_token(user_id)
+    async def _headers(self, user_id: int) -> dict[str, str]:
+        token = await self.auth_service.get_valid_access_token(user_id)
         return {"Authorization": f"Bearer {token}"}
 
     def _scoped_path(self, user_id: int, filename: str) -> str:
-        safe_name = filename.split("/")[-1]
-        prefix = f"{self.root_path}/" if self.root_path else ""
-        return f"{prefix}user_{user_id}/{safe_name}"
+        safe_name = PurePosixPath(filename).name
+        if filename == "":
+            safe_name = ""
+        if safe_name and safe_name.startswith("."):
+            raise ValueError(f"非法文件名: {filename!r}")
+        if filename and not safe_name:
+            raise ValueError(f"非法文件名: {filename!r}")
 
-    def save_file(self, user_id: int, filename: str, content: bytes) -> str:
+        prefix = f"{self.root_path}/" if self.root_path else ""
+        base = f"{prefix}user_{user_id}"
+        return f"{base}/{safe_name}" if safe_name else base
+
+    async def save_file(self, user_id: int, filename: str, content: bytes) -> str:
         path = self._scoped_path(user_id, filename)
         url = f"https://graph.microsoft.com/v1.0/me/drive/root:/{path}:/content"
-        with httpx.Client(timeout=30) as client:
-            resp = client.put(url, headers=self._headers(user_id), content=content)
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.put(url, headers=await self._headers(user_id), content=content)
             resp.raise_for_status()
         return path
 
-    def list_files(self, user_id: int) -> list[str]:
-        base = self._scoped_path(user_id, "").rstrip("/")
+    async def list_files(self, user_id: int) -> list[str]:
+        base = self._scoped_path(user_id, "")
         url = f"https://graph.microsoft.com/v1.0/me/drive/root:/{base}:/children"
-        with httpx.Client(timeout=30) as client:
-            resp = client.get(url, headers=self._headers(user_id))
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url, headers=await self._headers(user_id))
             if resp.status_code == 404:
                 return []
             resp.raise_for_status()
             payload = resp.json()
         return [item["name"] for item in payload.get("value", []) if "file" in item]
 
-    def read_text(self, user_id: int, relative_path: str) -> str:
+    async def read_text(self, user_id: int, relative_path: str) -> str:
         path = self._scoped_path(user_id, relative_path)
         url = f"https://graph.microsoft.com/v1.0/me/drive/root:/{path}:/content"
-        with httpx.Client(timeout=30) as client:
-            resp = client.get(url, headers=self._headers(user_id))
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(url, headers=await self._headers(user_id))
             resp.raise_for_status()
         content = resp.content
         try:

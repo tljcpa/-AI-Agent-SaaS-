@@ -27,13 +27,13 @@ class ToolCallResult:
 class StorageProvider(Protocol):
     """文件存储协议，必须按 user_id 做沙箱隔离。"""
 
-    def save_file(self, user_id: int, filename: str, content: bytes) -> str:
+    async def save_file(self, user_id: int, filename: str, content: bytes) -> str:
         ...
 
-    def list_files(self, user_id: int) -> list[str]:
+    async def list_files(self, user_id: int) -> list[str]:
         ...
 
-    def read_text(self, user_id: int, relative_path: str) -> str:
+    async def read_text(self, user_id: int, relative_path: str) -> str:
         ...
 
 

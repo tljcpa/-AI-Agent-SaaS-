@@ -30,5 +30,4 @@ ms_graph:
   redirect_uri: "http://localhost:8000/api/oauth/callback"
   scopes:
     - "Files.ReadWrite"
-    - "Sites.ReadWrite.All"
     - "offline_access"
