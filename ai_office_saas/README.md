@@ -9,6 +9,9 @@
 
 ## 快速开始
 
-请优先阅读离线部署文档：
-- [OFFLINE_SETUP_CN.md](./docs/OFFLINE_SETUP_CN.md)
-- [DEPLOYMENT_QUICKSTART_CN.md](./docs/DEPLOYMENT_QUICKSTART_CN.md)
+建议按以下顺序阅读：
+
+1. 部署与启动主指南（开发/生产通用）
+   - [DEPLOYMENT_QUICKSTART_CN.md](./docs/DEPLOYMENT_QUICKSTART_CN.md)
+2. 受限网络 / 离线安装补充
+   - [OFFLINE_SETUP_CN.md](./docs/OFFLINE_SETUP_CN.md)

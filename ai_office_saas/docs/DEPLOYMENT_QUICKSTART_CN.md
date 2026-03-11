@@ -1,36 +1,81 @@
-# AI Office SaaS 部署与启动指南（GitHub 风格）
+# AI Office SaaS 部署与启动指南（中文 / GitHub 风格）
 
-> 适用场景：你已经 `git clone` 了仓库，并进入了 `ai_office_saas/` 目录。
+> 面向第一次接手项目的开发者与运维同学。
+> 本文覆盖：本地开发、受限网络安装、生产上线前检查、反向代理要点、常见故障排查。
 
 ---
 
-## 1. 目录说明
+## 目录
+
+- [1. 项目结构](#1-项目结构)
+- [2. 环境要求](#2-环境要求)
+- [3. 部署前必改配置](#3-部署前必改配置)
+- [4. 安装依赖](#4-安装依赖)
+- [5. 启动服务（开发模式）](#5-启动服务开发模式)
+- [6. 启动后验证（Smoke Test）](#6-启动后验证smoke-test)
+- [7. 生产部署建议](#7-生产部署建议)
+- [8. Nginx 反向代理示例（含 WebSocket）](#8-nginx-反向代理示例含-websocket)
+- [9. 常见问题排查](#9-常见问题排查)
+- [10. 快速回滚与恢复](#10-快速回滚与恢复)
+
+---
+
+## 1. 项目结构
 
 ```text
 ai_office_saas/
-├── backend/   # FastAPI + Agent 引擎
-├── frontend/  # React + Vite
-└── docs/      # 部署/离线文档
+├── backend/
+│   ├── app/
+│   ├── config.yaml
+│   ├── requirements.txt
+│   └── scripts/
+├── frontend/
+│   ├── src/
+│   ├── package.json
+│   └── scripts/
+└── docs/
 ```
 
 ---
 
-## 2. 先改配置（必须）
+## 2. 环境要求
 
-编辑文件：`backend/config.yaml`
+### 后端
 
-最少要修改以下内容：
+- Python 3.10+
+- Linux / macOS / Windows（生产推荐 Linux）
+
+### 前端
+
+- Node.js 18+
+- npm 9+
+
+### 网络
+
+- 可访问 PyPI 与 npm 仓库（若受限，见离线/镜像方案）
+- 如有企业防火墙，确保 WebSocket 连接允许 Upgrade
+
+---
+
+## 3. 部署前必改配置
+
+配置文件：`backend/config.yaml`
+
+> ⚠️ 安全重点：`jwt_secret` 默认是开发占位值。生产必须使用高强度密钥，并建议通过环境变量 `JWT_SECRET` 注入。
+
+### 推荐修改项
 
 1. `security.jwt_secret`
-   - 默认是占位值，必须替换为强随机密钥。
+   - 开发可在 `config.yaml` 中设置。
+   - 生产推荐：仅通过环境变量 `JWT_SECRET` 注入。
 2. `app.cors_origins`
-   - 改成你前端的实际访问地址。
+   - 填写前端实际访问域名。
 3. `database.url`
-   - 小规模可继续用 SQLite；生产建议 MySQL / PostgreSQL。
+   - 开发可用 SQLite；生产建议 PostgreSQL / MySQL。
 4. `storage.base_path`
-   - 建议改成服务器绝对路径（如 `/data/ai-office/users`）。
+   - 建议使用绝对路径，如 `/data/ai-office/users`。
 
-示例（仅示意）：
+### 示例（仅示意）
 
 ```yaml
 app:
@@ -41,7 +86,7 @@ app:
     - "https://office.example.com"
 
 security:
-  jwt_secret: "your-very-strong-random-secret"
+  jwt_secret: "INSECURE_DEV_ONLY_SET_JWT_SECRET_ENV"
   jwt_algorithm: "HS256"
   access_token_expire_minutes: 120
 
@@ -60,37 +105,47 @@ database:
   url: "sqlite:///./ai_office.db"
 ```
 
+### 生产环境变量示例
+
+```bash
+export JWT_SECRET='replace-with-a-strong-random-secret'
+```
+
 ---
 
-## 3. 安装依赖
+## 4. 安装依赖
 
-### 3.1 后端依赖
+> 假设当前目录为 `ai_office_saas/`
+
+### 4.1 后端依赖安装
 
 ```bash
 cd backend
 ./scripts/install_backend_deps.sh
 ```
 
-受限网络（推荐镜像）：
+#### 受限网络（镜像源）
 
 ```bash
 PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple ./scripts/install_backend_deps.sh
 ```
 
-完全离线：
+#### 完全离线（wheelhouse）
 
 ```bash
 WHEELHOUSE_DIR=./wheelhouse ./scripts/install_backend_deps.sh
 ```
 
-### 3.2 前端依赖
+---
+
+### 4.2 前端依赖安装
 
 ```bash
 cd ../frontend
 ./scripts/install_frontend_deps.sh
 ```
 
-受限网络（镜像）：
+#### 受限网络（镜像源）
 
 ```bash
 NPM_REGISTRY=https://registry.npmmirror.com ./scripts/install_frontend_deps.sh
@@ -98,19 +153,7 @@ NPM_REGISTRY=https://registry.npmmirror.com ./scripts/install_frontend_deps.sh
 
 ---
 
-## 4. 改前端 API 地址（按部署环境）
-
-编辑文件：`frontend/src/api/client.ts`
-
-把 `baseURL` 从默认值改成后端实际地址：
-
-```ts
-baseURL: 'https://api.example.com/api'
-```
-
----
-
-## 5. 启动服务
+## 5. 启动服务（开发模式）
 
 ### 5.1 启动后端
 
@@ -126,42 +169,152 @@ cd ../frontend
 npm run dev
 ```
 
+### 5.3 配置前端 API 地址
+
+编辑 `frontend/src/api/client.ts`，将 `baseURL` 配置为后端地址（包含 `/api` 前缀）：
+
+```ts
+baseURL: 'https://api.example.com/api'
+```
+
 ---
 
 ## 6. 启动后验证（Smoke Test）
 
-1. 打开后端文档：`http://<server-ip>:8000/docs`
-2. 打开前端页面：`http://<server-ip>:5173`
-3. 注册/登录后：
-   - 上传文件
-   - 进入聊天
-   - 触发 Agent 事件按钮（确认/取消/继续）
+按顺序验证：
+
+1. 打开后端文档：`http://<backend-host>:8000/docs`
+2. 打开前端：`http://<frontend-host>:5173`
+3. 完成注册/登录
+4. 上传文件（符合类型与大小限制）
+5. 打开聊天，触发 Agent 流程：
+   - `start`
+   - `action_confirm`
+   - 文件缺失时 `action_ask_user`
 
 ---
 
-## 7. 常见问题
+## 7. 生产部署建议
 
-### Q1: `pip install` 或 `npm install` 报 403
+### 后端
 
-使用项目自带脚本 + 镜像参数，详见：`docs/OFFLINE_SETUP_CN.md`。
+- 禁止使用 `--reload`。
+- 使用 `systemd` / Supervisor / 容器编排托管进程。
+- 使用环境变量注入敏感信息（如 `JWT_SECRET`）。
 
-### Q2: 前端能打开但接口报错
+### 数据库
 
-检查：
-1. `frontend/src/api/client.ts` 的 `baseURL` 是否正确。
-2. `backend/config.yaml` 的 `app.cors_origins` 是否包含前端地址。
+- 生产优先 PostgreSQL / MySQL。
+- 为用户表、文件表做好备份策略。
 
-### Q3: WebSocket 连不上
+### 存储
 
-检查：
-1. 前端是否使用了正确的后端域名/端口。
-2. 反向代理（如 Nginx）是否开启了 WebSocket Upgrade 头转发。
+- `storage.base_path` 使用独立数据盘。
+- 增加磁盘配额与监控告警。
+
+### 安全
+
+- 强制 HTTPS。
+- 对外仅暴露反向代理端口。
+- 定期轮换 JWT 密钥（需配合业务会话策略）。
+
+### 可用性
+
+- 会话状态当前为内存态，生产建议迁移到 Redis。
+- 关键接口增加日志、指标和告警（错误率、延迟、磁盘使用）。
 
 ---
 
-## 8. 生产建议
+## 8. Nginx 反向代理示例（含 WebSocket）
 
-- 使用 `systemd` 托管后端进程（不要长期用 `--reload`）。
-- 使用 Nginx 反代前后端，并启用 HTTPS。
-- 将 SQLite 升级为 PostgreSQL/MySQL。
-- 将会话状态从内存迁移到 Redis。
+> 以下为最小示例，请按实际域名、证书路径调整。
+
+```nginx
+server {
+    listen 80;
+    server_name office.example.com;
+
+    # 前端静态资源
+    location / {
+        proxy_pass http://127.0.0.1:5173;
+        proxy_set_header Host $host;
+    }
+
+    # 后端 API
+    location /api/ {
+        proxy_pass http://127.0.0.1:8000/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket
+    location /api/chat/ws {
+        proxy_pass http://127.0.0.1:8000/api/chat/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+}
+```
+
+---
+
+## 9. 常见问题排查
+
+### 9.1 前端打开正常，但接口 401 / 403
+
+检查项：
+
+- Token 是否正确携带（`Authorization: Bearer <token>`）
+- `cors_origins` 是否包含前端域名
+- 反向代理是否正确透传请求头
+
+### 9.2 WebSocket 连不上
+
+检查项：
+
+- URL 是否使用正确路径：`/api/chat/ws`
+- Nginx 是否配置 Upgrade / Connection 头
+- 网关或企业代理是否阻断 WS
+
+### 9.3 上传失败
+
+检查项：
+
+- 文件 MIME 类型是否受支持
+- 文件是否超过后端大小上限
+- `storage.base_path` 是否有写权限
+
+### 9.4 启动时报配置错误
+
+检查项：
+
+- `backend/config.yaml` 是否存在且格式正确
+- 生产是否正确设置 `JWT_SECRET`
+
+---
+
+## 10. 快速回滚与恢复
+
+### 回滚版本
+
+```bash
+git log --oneline -n 5
+git checkout <stable_commit>
+```
+
+### 恢复服务
+
+1. 重装依赖（必要时）
+2. 检查配置与环境变量
+3. 依次重启后端与前端
+4. 重新执行 Smoke Test
+
+---
+
+## 附录
+
+- 受限网络/离线安装：[`OFFLINE_SETUP_CN.md`](./OFFLINE_SETUP_CN.md)
