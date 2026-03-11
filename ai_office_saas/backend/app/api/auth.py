@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
 from app.core.security import create_access_token, hash_password, verify_password
 from app.models.database import User, session_scope
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+limiter = Limiter(key_func=get_remote_address)
 
 
 class AuthRequest(BaseModel):
@@ -17,7 +20,8 @@ class AuthRequest(BaseModel):
 
 
 @router.post("/register")
-def register(payload: AuthRequest):
+@limiter.limit("5/minute")
+def register(request: Request, payload: AuthRequest):
     user_id: int | None = None
     try:
         with session_scope() as db:
@@ -40,7 +44,8 @@ def register(payload: AuthRequest):
 
 
 @router.post("/login")
-def login(payload: AuthRequest):
+@limiter.limit("10/minute")
+def login(request: Request, payload: AuthRequest):
     with session_scope() as db:
         user = db.query(User).filter(User.username == payload.username).first()
         if not user or not verify_password(payload.password, user.hashed_password):
