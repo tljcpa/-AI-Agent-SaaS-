@@ -11,22 +11,22 @@ from app.adapters.protocols import ToolCallResult, ToolSchema
 class OpenAICompatLLMProvider:
     """通过 OpenAI-Compatible Chat Completions 协议调用模型。"""
 
-    def __init__(self, base_url: str, api_key: str, model: str) -> None:
+    def __init__(self, base_url: str, api_key: str, model: str, http_client: httpx.AsyncClient) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
+        self.http_client = http_client
 
     async def generate(self, prompt: str, context: dict | None = None) -> str:
         messages = [{"role": "user", "content": prompt if not context else f"{prompt}\n上下文:{context}"}]
         payload = {"model": self.model, "messages": messages}
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                json=payload,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await self.http_client.post(
+            f"{self.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json=payload,
+        )
+        resp.raise_for_status()
+        data = resp.json()
         return data["choices"][0]["message"]["content"]
 
     async def tool_call(
@@ -49,14 +49,13 @@ class OpenAICompatLLMProvider:
         payload = {"model": self.model, "messages": messages, "tools": payload_tools}
         if context:
             payload["metadata"] = context
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}"},
-                json=payload,
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await self.http_client.post(
+            f"{self.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json=payload,
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
         message = data["choices"][0]["message"]
         tool_calls = message.get("tool_calls") or []

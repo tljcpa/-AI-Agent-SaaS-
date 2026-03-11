@@ -128,6 +128,9 @@ export default function ChatBox({ token }: Props) {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) sendStart()
+          }}
           placeholder="描述任务，例如：请分析这个季度报表并生成总结"
           className="flex-1 border rounded px-3 py-2 text-sm"
         />

@@ -38,7 +38,7 @@ class ProviderFactory:
         raise ValueError(f"不支持的 storage provider: {settings.storage.type}")
 
     @staticmethod
-    def create_llm(settings: Settings) -> LLMProvider:
+    def create_llm(settings: Settings, http_client: httpx.AsyncClient) -> LLMProvider:
         if settings.llm.provider == "zhipu_mock":
             return ZhipuLLMProvider(api_key=settings.llm.api_key)
         if settings.llm.provider == "openai_compat":
@@ -46,6 +46,7 @@ class ProviderFactory:
                 base_url=settings.llm.base_url,
                 api_key=settings.llm.api_key,
                 model=settings.llm.model,
+                http_client=http_client,
             )
         raise ValueError(f"不支持的 llm provider: {settings.llm.provider}")
 
@@ -61,7 +62,7 @@ class ProviderFactory:
 def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppContainer:
     auth_service = MSAuthService(settings.ms_graph, http_client=http_client)
     storage = ProviderFactory.create_storage(settings, auth_service)
-    llm = ProviderFactory.create_llm(settings)
+    llm = ProviderFactory.create_llm(settings, http_client)
     office = ProviderFactory.create_office(settings, auth_service)
     tool_registry = ToolRegistry()
 
