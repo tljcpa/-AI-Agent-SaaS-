@@ -82,15 +82,33 @@ class AgentEngine:
                 tools = self.tool_registry.list()
                 decision = await self.llm.tool_call(state.messages, tools, context={"step": i + 1})
                 await emit({"type": "action_progress", "message": f"Step {i + 1}: {decision.content}"})
-                state.messages.append({"role": "assistant", "content": decision.content})
+                if decision.tool_name:
+                    state.messages.append(
+                        {
+                            "role": "assistant",
+                            "content": decision.content or None,
+                            "tool_calls": [
+                                {
+                                    "id": f"call_{state.step_count}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": decision.tool_name,
+                                        "arguments": decision.tool_arguments,
+                                    },
+                                }
+                            ],
+                        }
+                    )
+                else:
+                    state.messages.append({"role": "assistant", "content": decision.content})
 
                 if not decision.tool_name:
                     break
 
                 try:
-                    tool_args = json.loads(decision.content) if decision.content else {}
+                    tool_args = json.loads(decision.tool_arguments) if decision.tool_arguments else {}
                 except json.JSONDecodeError:
-                    await emit({"type": "error", "message": f"LLM 返回的工具参数无法解析: {decision.content}"})
+                    await emit({"type": "error", "message": f"LLM 返回的工具参数无法解析: {decision.tool_arguments}"})
                     break
                 if not isinstance(tool_args, dict):
                     await emit({"type": "error", "message": "LLM 返回的工具参数必须为 JSON 对象"})
@@ -115,7 +133,13 @@ class AgentEngine:
                     user_id=state.user_id,
                     arguments=filtered_args,
                 )
-                state.messages.append({"role": "tool", "content": result})
+                state.messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": f"call_{state.step_count}",
+                        "content": result,
+                    }
+                )
 
             summary = await self.llm.generate("请给出当前任务总结", {"steps": state.step_count})
             await emit({"type": "message", "message": summary})
