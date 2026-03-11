@@ -23,14 +23,18 @@ export default function ChatBox({ token }: Props) {
   const wsRef = useRef<WebSocket | null>(null)
 
   const wsUrl = useMemo(() => {
-    const sid = sessionId ? `&session_id=${sessionId}` : ''
-    return `ws://localhost:8000/api/chat/ws?token=${token}${sid}`
-  }, [token, sessionId])
+    const sid = sessionId ? `?session_id=${sessionId}` : ''
+    return `ws://localhost:8000/api/chat/ws${sid}`
+  }, [sessionId])
 
   useEffect(() => {
     if (!token) return
     const ws = new WebSocket(wsUrl)
     wsRef.current = ws
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'auth', token }))
+    }
 
     ws.onmessage = (ev) => {
       const data: WSMessage = JSON.parse(ev.data)

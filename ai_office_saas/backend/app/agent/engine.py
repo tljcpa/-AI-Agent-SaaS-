@@ -49,6 +49,8 @@ class AgentEngine:
             state.task = user_message
             state.phase = AgentPhase.UNDERSTAND
             state.messages.append({"role": "user", "content": user_message})
+            state.phase = AgentPhase.PLAN
+            state.phase = AgentPhase.EXECUTE
             await emit({"type": "action_progress", "message": "进入 ReAct 执行循环..."})
 
             files = await self.storage.list_files(state.user_id)

@@ -46,28 +46,14 @@ def get_agent_engine(websocket: WebSocket) -> AgentEngine:
 async def websocket_chat(websocket: WebSocket):
     await websocket.accept()
 
-    token = websocket.query_params.get("token", "")
-    sub = try_get_subject(token)
-    if not sub or not sub.isdigit():
-        await websocket.send_json({"type": "error", "message": "鉴权失败"})
-        await websocket.close(code=1008)
-        return
+    token = websocket.headers.get("authorization", "").removeprefix("Bearer ").strip()
+    if not token:
+        token = websocket.query_params.get("token", "")
 
-    user_id = int(sub)
     session_id = websocket.query_params.get("session_id") or str(uuid4())
     _cleanup_session_states()
 
-    state = session_states.get(session_id)
-    if state is None:
-        state = AgentState(session_id=session_id, user_id=user_id)
-        session_states[session_id] = state
-    elif state.user_id != user_id:
-        await websocket.send_json({"type": "error", "message": "会话不属于当前用户"})
-        await websocket.close(code=1008)
-        return
-
-    session_last_seen[session_id] = time()
-
+    state: AgentState | None = None
     engine = get_agent_engine(websocket)
 
     async def emit(payload: dict) -> None:
@@ -80,6 +66,34 @@ async def websocket_chat(websocket: WebSocket):
         while True:
             incoming = await websocket.receive_json()
             kind = incoming.get("type")
+
+            if state is None:
+                if kind != "auth":
+                    await emit({"type": "error", "message": "请先完成鉴权"})
+                    await websocket.close(code=1008)
+                    return
+
+                auth_token = str(incoming.get("token", "")).strip() or token
+                sub = try_get_subject(auth_token)
+                if not sub or not sub.isdigit():
+                    await emit({"type": "error", "message": "鉴权失败"})
+                    await websocket.close(code=1008)
+                    return
+
+                current_user_id = int(sub)
+                _cleanup_session_states()
+                state = session_states.get(session_id)
+                if state is None:
+                    state = AgentState(session_id=session_id, user_id=current_user_id)
+                    session_states[session_id] = state
+                elif state.user_id != current_user_id:
+                    await emit({"type": "error", "message": "会话不属于当前用户"})
+                    await websocket.close(code=1008)
+                    return
+
+                session_last_seen[session_id] = time()
+                await emit({"type": "message", "message": "鉴权成功"})
+                continue
 
             if kind == "start":
                 session_last_seen[session_id] = time()

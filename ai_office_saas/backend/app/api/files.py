@@ -52,7 +52,7 @@ async def upload_file(
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail=f"文件过大，最大支持 {MAX_UPLOAD_BYTES // (1024 * 1024)}MB")
 
-    relative_path = storage.save_file(user_id, file.filename, content)
+    relative_path = await storage.save_file(user_id, file.filename, content)
     with session_scope() as db:
         db_file = UserFile(user_id=user_id, filename=file.filename, path=relative_path)
         db.add(db_file)
