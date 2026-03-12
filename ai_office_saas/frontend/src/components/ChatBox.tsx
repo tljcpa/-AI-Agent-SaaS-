@@ -67,9 +67,15 @@ export default function ChatBox({ token }: Props) {
         pushMessage({ type: 'error', message: 'WebSocket 连接异常' })
       }
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         wsRef.current = null
         if (isManualCloseRef.current) return
+        if (event.code === 1008) {
+          pushMessage({ type: 'error', message: '鉴权失败，请重新登录' })
+          localStorage.removeItem('token')
+          window.location.href = '/'
+          return
+        }
         if (reconnectAttemptsRef.current >= 5) {
           pushMessage({ type: 'error', message: '连接已断开，重连次数已达上限，请刷新页面重试。' })
           return

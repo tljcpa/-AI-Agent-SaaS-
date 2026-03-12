@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 
@@ -14,6 +15,7 @@ from app.models.database import UserFile, session_scope
 router = APIRouter(prefix="/files", tags=["files"])
 logger = logging.getLogger(__name__)
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx", ".xls", ".xlsx", ".txt"}
 MAGIC_BYTES: dict[str, list[bytes]] = {
     "application/pdf": [b"%PDF"],
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [b"PK\x03\x04"],
@@ -60,6 +62,10 @@ async def upload_file(
     if filename in {".", ".."}:
         raise HTTPException(status_code=400, detail="非法文件名")
 
+    file_ext = Path(filename).suffix.lower()
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="不支持的文件扩展名")
+
     content = await file.read()
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail=f"文件过大，最大支持 {MAX_UPLOAD_BYTES // (1024 * 1024)}MB")
@@ -68,7 +74,12 @@ async def upload_file(
     magic_list = MAGIC_BYTES.get(declared_type)
     if magic_list is None:
         raise HTTPException(status_code=400, detail="不支持的文件类型")
-    if magic_list and not any(content.startswith(magic) for magic in magic_list):
+    if declared_type == "text/plain":
+        try:
+            content.decode("utf-8", errors="strict")
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=400, detail="文件内容与声明类型不符")
+    elif magic_list and not any(content.startswith(magic) for magic in magic_list):
         raise HTTPException(status_code=400, detail="文件内容与声明类型不符")
 
     try:

@@ -23,10 +23,15 @@ def get_oauth_service(request: Request) -> MSAuthService:
 
 
 @router.get("/redirect")
-def oauth_redirect(request: Request, service: MSAuthService = Depends(get_oauth_service)):
+def oauth_redirect(
+    request: Request,
+    token: str = Query(default=""),
+    service: MSAuthService = Depends(get_oauth_service),
+):
     auth_header = request.headers.get("Authorization", "")
-    token = auth_header.removeprefix("Bearer ").strip()
-    user_sub = try_get_subject(token)
+    header_token = auth_header.removeprefix("Bearer ").strip()
+    effective_token = header_token or token
+    user_sub = try_get_subject(effective_token)
     if not user_sub or not user_sub.isdigit():
         logger.warning("OAuth redirect unauthorized")
         raise HTTPException(status_code=401, detail="未登录")
@@ -72,7 +77,7 @@ async def oauth_callback(
         await service.exchange_code(user_id, code)
     except Exception as e:
         logger.error("OAuth callback exchange failed", exc_info=e)
-        raise HTTPException(status_code=502, detail=f"OneDrive 授权失败: {e}")
+        raise HTTPException(status_code=502, detail="OneDrive 授权失败，请稍后重试")
 
     logger.info("OAuth callback completed", extra={"user_id": user_id})
     return {"ok": True, "message": "OneDrive 授权成功，可继续发起任务"}
