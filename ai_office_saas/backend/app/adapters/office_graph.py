@@ -103,13 +103,3 @@ class GraphOfficeProvider:
             chart_resp.raise_for_status()
         return f"Excel {sheet_name} 写入 {len(data)} 行并尝试更新图表"
 
-    async def format_document(self, user_id: int, file_path: str, style: str) -> str:
-        return await self.format_word_document(user_id, file_path, style)
-
-    async def analyze_report(self, user_id: int, file_path: str) -> str:
-        sheet = "Sheet1"
-        data = await self.read_excel_data(user_id, file_path, sheet)
-        return f"报表读取成功（{sheet}）：\n{data[:1000]}"
-
-    async def export_pdf(self, user_id: int, file_id: str) -> str:
-        return f"PDF 导出暂未接入（mock）：{file_id}"

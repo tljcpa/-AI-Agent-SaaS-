@@ -23,10 +23,3 @@ class E5OfficeProvider:
         await asyncio.sleep(0.2)
         return f"用户 {user_id} 向 Excel {file_id}/{sheet_name} 写入 {len(data)} 行（mock）"
 
-    async def format_document(self, user_id: int, file_path: str, style: str) -> str:
-        await asyncio.sleep(0.3)
-        return f"用户 {user_id} 的文档 {file_path} 已按 {style} 风格完成排版。"
-
-    async def analyze_report(self, user_id: int, file_path: str) -> str:
-        await asyncio.sleep(0.3)
-        return f"用户 {user_id} 的报表 {file_path} 分析完成：营收上升 12%，成本下降 4%。"

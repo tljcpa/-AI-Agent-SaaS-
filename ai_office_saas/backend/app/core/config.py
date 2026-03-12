@@ -33,8 +33,8 @@ class StorageConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    provider: str = "zhipu_mock"
-    api_key: str = "mock-key"
+    provider: str = "zhipu"
+    api_key: str = ""
     base_url: str = "https://api.openai.com/v1"
     model: str = "gpt-4o-mini"
 

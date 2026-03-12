@@ -25,7 +25,6 @@ class AppContainer:
     office: OfficeAPIProvider
     auth_service: MSAuthService
     agent_engine: AgentEngine
-    tool_registry: ToolRegistry
 
 
 class ProviderFactory:
@@ -132,5 +131,4 @@ def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppCo
         office=office,
         auth_service=auth_service,
         agent_engine=engine,
-        tool_registry=tool_registry,
     )
