@@ -30,6 +30,7 @@ class AgentEngine:
         self._resume_events: dict[str, asyncio.Event] = {}
         self._resume_events_lock = asyncio.Lock()
         self.max_steps = max_steps
+        self.max_message_history: int = 40
 
     @staticmethod
     def _event_key(state: AgentState) -> str:
@@ -85,6 +86,9 @@ class AgentEngine:
 
             state.phase = AgentPhase.EXECUTE
             for i in range(self.max_steps):
+                if len(state.messages) > self.max_message_history:
+                    # 保留第一条用户消息，截断中间历史，保留最近 20 条
+                    state.messages = state.messages[:1] + state.messages[-(self.max_message_history - 1):]
                 state.step_count += 1
                 tools = self.tool_registry.list()
                 decision = await self.llm.tool_call(state.messages, tools, context={"step": i + 1})

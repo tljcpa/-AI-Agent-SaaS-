@@ -8,7 +8,7 @@ app:
   host: "0.0.0.0"
   port: 8000
   cors_origins:
-    - "${FRONTEND_ORIGIN}"   # 通过环境变量覆盖，或直接填写前端域名
+    - "http://localhost:5173"  # 生产部署通过环境变量 FRONTEND_ORIGIN 覆盖，此处仅为开发默认值
   agent_max_steps: 5
 
 security:
