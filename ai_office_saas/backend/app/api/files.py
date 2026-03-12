@@ -87,9 +87,16 @@ async def upload_file(
     except (RuntimeError, ValueError) as e:
         logger.error("Storage save failed", exc_info=e)
         raise HTTPException(status_code=503, detail="存储服务暂时不可用，请稍后重试")
-    with session_scope() as db:
-        db_file = UserFile(user_id=user_id, filename=filename, path=relative_path)
-        db.add(db_file)
+    try:
+        with session_scope() as db:
+            db_file = UserFile(user_id=user_id, filename=filename, path=relative_path)
+            db.add(db_file)
+    except Exception as e:
+        logger.error(
+            "File metadata write failed after upload, orphan file at path: %s, user_id: %s",
+            relative_path, user_id, exc_info=e,
+        )
+        raise HTTPException(status_code=503, detail="文件元数据保存失败，请稍后重试")
     logger.info("File uploaded", extra={"user_id": user_id, "filename": filename})
     return {"filename": filename, "path": relative_path}
 

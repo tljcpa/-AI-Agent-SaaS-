@@ -63,7 +63,11 @@ class ProviderFactory:
         if settings.office.provider == "e5_mock":
             return E5OfficeProvider()
         if settings.office.provider == "graph":
-            return GraphOfficeProvider(auth_service=auth_service, http_client=auth_service.http_client)
+            return GraphOfficeProvider(
+                auth_service=auth_service,
+                http_client=auth_service.http_client,
+                root_path=settings.storage.onedrive_root,
+            )
         raise ValueError(f"不支持的 office provider: {settings.office.provider}")
 
 

@@ -29,9 +29,10 @@ llm:
   model: "glm-4-flash"       # 可选：glm-4、glm-4-flash、glm-3-turbo
 
 office:
-  # e5_mock：演示模式，不操作真实文件
+  # local：操作本地上传的真实文件（storage.type=local 时使用，推荐默认）
+  # e5_mock：演示模式，所有操作返回假数据，不操作真实文件
   # graph：真实 OneDrive 操作，需配置下方 ms_graph 字段
-  provider: "e5_mock"
+  provider: "local"
 
 database:
   # 开发可用 SQLite；生产必须换 PostgreSQL/MySQL

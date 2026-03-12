@@ -26,12 +26,10 @@ def get_oauth_service(request: Request) -> MSAuthService:
 @router.get("/redirect")
 def oauth_redirect(
     request: Request,
-    token: str = Query(default=""),
     service: MSAuthService = Depends(get_oauth_service),
 ):
     auth_header = request.headers.get("Authorization", "")
-    header_token = auth_header.removeprefix("Bearer ").strip()
-    effective_token = header_token or token
+    effective_token = auth_header.removeprefix("Bearer ").strip()
     user_sub = try_get_subject(effective_token)
     if not user_sub or not user_sub.isdigit():
         logger.warning("OAuth redirect unauthorized")
