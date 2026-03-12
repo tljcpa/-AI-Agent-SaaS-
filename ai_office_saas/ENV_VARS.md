@@ -8,3 +8,5 @@
 | LLM_API_KEY | 智谱 GLM API Key | 从 https://open.bigmodel.cn 获取 |
 | DB_URL | 数据库连接串 | `postgresql+psycopg2://user:pass@host:5432/dbname` |
 | FRONTEND_ORIGIN | 前端访问域名（CORS 白名单） | `https://office.example.com` |
+| MS_GRAPH_CLIENT_SECRET | Azure 应用客户端密钥 | 在 Azure Portal 应用注册中生成 |
+| MS_GRAPH_CLIENT_ID     | Azure 应用客户端 ID  | 在 Azure Portal 应用注册中查看 |
