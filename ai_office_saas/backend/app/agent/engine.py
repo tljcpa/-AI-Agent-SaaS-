@@ -58,7 +58,13 @@ class AgentEngine:
             state.phase = AgentPhase.EXECUTE
             await emit({"type": "action_progress", "message": "进入 ReAct 执行循环..."})
 
-            files = await self.storage.list_files(state.user_id)
+            try:
+                files = await self.storage.list_files(state.user_id)
+            except Exception as e:
+                logger.error("Failed to list files", exc_info=e)
+                await emit({"type": "error", "message": "获取文件列表失败，请检查存储配置后重试"})
+                state.phase = AgentPhase.ERROR
+                return
             if not files:
                 state.phase = AgentPhase.WAIT_USER
                 state.waiting_action = "need_file"

@@ -18,11 +18,11 @@ from app.core.security import try_get_subject
 router = APIRouter(prefix="/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
 
-# 注意：当前 session 状态保存在进程内存，仅支持单进程模式。
-# 多 worker 部署时必须启用 sticky session（如 nginx ip_hash）或限制 --workers=1，
-# 否则 WebSocket 会话可能在跨 worker 路由后出现状态丢失/不一致。
+# 生产部署注意: 当前会话状态存储在进程内存中，仅支持单进程模式 (--workers=1)
+# 如需多进程水平扩展，需将 session_states 迁移至 Redis
 session_states: dict[str, AgentState] = {}
 session_last_seen: dict[str, float] = {}
+_session_lock = asyncio.Lock()
 MAX_SESSION_STATES = 1000
 SESSION_TTL_SECONDS = 60 * 60
 
@@ -30,22 +30,23 @@ SESSION_TTL_SECONDS = 60 * 60
 _MULTI_WORKER_WARNING_LOGGED = False
 
 
-def _cleanup_session_states() -> None:
+async def _cleanup_session_states() -> None:
     now = time()
-    expired = [sid for sid, last_seen in session_last_seen.items() if now - last_seen > SESSION_TTL_SECONDS]
-    for sid in expired:
-        session_last_seen.pop(sid, None)
-        session_states.pop(sid, None)
+    async with _session_lock:
+        expired = [sid for sid, last_seen in session_last_seen.items() if now - last_seen > SESSION_TTL_SECONDS]
+        for sid in expired:
+            session_last_seen.pop(sid, None)
+            session_states.pop(sid, None)
 
-    tracked_session_count = len(session_last_seen)
-    if tracked_session_count <= MAX_SESSION_STATES:
-        return
+        tracked_session_count = len(session_last_seen)
+        if tracked_session_count <= MAX_SESSION_STATES:
+            return
 
-    overflow = tracked_session_count - MAX_SESSION_STATES
-    oldest_session_ids = sorted(session_last_seen.items(), key=lambda item: item[1])[:overflow]
-    for sid, _ in oldest_session_ids:
-        session_last_seen.pop(sid, None)
-        session_states.pop(sid, None)
+        overflow = tracked_session_count - MAX_SESSION_STATES
+        oldest_session_ids = sorted(session_last_seen.items(), key=lambda item: item[1])[:overflow]
+        for sid, _ in oldest_session_ids:
+            session_last_seen.pop(sid, None)
+            session_states.pop(sid, None)
 
 
 def get_agent_engine(websocket: WebSocket) -> AgentEngine:
@@ -67,7 +68,7 @@ async def websocket_chat(websocket: WebSocket):
 
     token = websocket.headers.get("authorization", "").removeprefix("Bearer ").strip()
     session_id = websocket.query_params.get("session_id") or str(uuid4())
-    _cleanup_session_states()
+    await _cleanup_session_states()
     logger.info("WebSocket connected", extra={"session_id": session_id})
 
     state: AgentState | None = None
@@ -121,11 +122,16 @@ async def websocket_chat(websocket: WebSocket):
                     return
 
                 current_user_id = int(sub)
-                state = session_states.get(session_id)
-                if state is None:
-                    state = AgentState(session_id=session_id, user_id=current_user_id)
-                    session_states[session_id] = state
-                elif state.user_id != current_user_id:
+                async with _session_lock:
+                    state = session_states.get(session_id)
+                    if state is None:
+                        state = AgentState(session_id=session_id, user_id=current_user_id)
+                        session_states[session_id] = state
+                    user_id_mismatch = state.user_id != current_user_id
+                    if not user_id_mismatch:
+                        session_last_seen[session_id] = time()
+
+                if user_id_mismatch:
                     logger.warning(
                         "Possible cross-worker routing or session hijack detected",
                         extra={
@@ -138,12 +144,12 @@ async def websocket_chat(websocket: WebSocket):
                     await websocket.close(code=1008)
                     return
 
-                session_last_seen[session_id] = time()
                 await emit({"type": "message", "message": "鉴权成功"})
                 continue
 
             if kind == "start":
-                session_last_seen[session_id] = time()
+                async with _session_lock:
+                    session_last_seen[session_id] = time()
                 text = str(incoming.get("message", "")).strip()
                 if not text:
                     await emit({"type": "error", "message": "任务描述不能为空"})
@@ -164,7 +170,8 @@ async def websocket_chat(websocket: WebSocket):
                 running_task.add_done_callback(_on_task_done)
 
             elif kind == "user_action":
-                session_last_seen[session_id] = time()
+                async with _session_lock:
+                    session_last_seen[session_id] = time()
                 action = str(incoming.get("action", "")).strip()
                 value = str(incoming.get("value", "")).strip()
                 if not action:
@@ -183,6 +190,6 @@ async def websocket_chat(websocket: WebSocket):
     except Exception as e:
         logger.error("WebSocket internal error", exc_info=e)
         try:
-            await emit({"type": "error", "message": f"服务端内部错误: {e}"})
+            await emit({"type": "error", "message": "服务端内部错误，请稍后重试或联系管理员"})
         except Exception:
             pass

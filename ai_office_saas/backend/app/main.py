@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 import httpx
@@ -24,16 +25,29 @@ logging.basicConfig(
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    app_env = os.getenv("APP_ENV", "development")
+
+    docs_url = "/docs" if app_env == "development" else None
+    redoc_url = "/redoc" if app_env == "development" else None
+    openapi_url = "/openapi.json" if app_env == "development" else None
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         init_db()
-        async with httpx.AsyncClient(timeout=30) as http_client:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=5.0, read=120.0, write=30.0, pool=5.0)
+        ) as http_client:
             app.state.http_client = http_client
             app.state.container = build_container(settings, http_client)
             yield
 
-    app = FastAPI(title=settings.app.name, lifespan=lifespan)
+    app = FastAPI(
+        title=settings.app.name,
+        lifespan=lifespan,
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
+    )
 
     app.state.limiter = auth.limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

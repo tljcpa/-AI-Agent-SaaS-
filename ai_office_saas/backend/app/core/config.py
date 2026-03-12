@@ -88,6 +88,10 @@ def get_settings() -> Settings:
         payload.setdefault("database", {})["url"] = os.getenv("DB_URL")
     if os.getenv("FRONTEND_ORIGIN"):
         payload.setdefault("app", {})["cors_origins"] = [os.getenv("FRONTEND_ORIGIN")]
+    if os.getenv("MS_GRAPH_CLIENT_SECRET"):
+        payload.setdefault("ms_graph", {})["client_secret"] = os.getenv("MS_GRAPH_CLIENT_SECRET")
+    if os.getenv("MS_GRAPH_CLIENT_ID"):
+        payload.setdefault("ms_graph", {})["client_id"] = os.getenv("MS_GRAPH_CLIENT_ID")
 
     settings = Settings.model_validate(payload)
     app_env = getenv("APP_ENV", "development")
