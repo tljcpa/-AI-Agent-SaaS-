@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import os
 import warnings
+from functools import lru_cache
 from pathlib import Path
 
 from cryptography.fernet import Fernet
@@ -36,12 +37,14 @@ def _build_fernet() -> Fernet:
     return Fernet(dev_key)
 
 
-_FERNET: Fernet = _build_fernet()
+@lru_cache(maxsize=1)
+def _get_fernet() -> Fernet:
+    return _build_fernet()
 
 
 def encrypt_token(plaintext: str) -> str:
-    return _FERNET.encrypt(plaintext.encode("utf-8")).decode("utf-8")
+    return _get_fernet().encrypt(plaintext.encode("utf-8")).decode("utf-8")
 
 
 def decrypt_token(ciphertext: str) -> str:
-    return _FERNET.decrypt(ciphertext.encode("utf-8")).decode("utf-8")
+    return _get_fernet().decrypt(ciphertext.encode("utf-8")).decode("utf-8")

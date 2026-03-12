@@ -54,8 +54,8 @@ async def upload_file(
         raise HTTPException(status_code=400, detail="文件名不能包含空字节")
     if filename.startswith("."):
         raise HTTPException(status_code=400, detail="文件名不能以 . 开头")
-    if re.fullmatch(r"^[\w\-. ]+$", filename) is None:
-        raise HTTPException(status_code=400, detail="文件名包含非法字符")
+    if re.fullmatch(r"^[\w\-\.]+$", filename) is None:
+        raise HTTPException(status_code=400, detail="文件名只能包含字母、数字、下划线、短横线和点")
 
     content = await file.read()
     if len(content) > MAX_UPLOAD_BYTES:
@@ -68,7 +68,11 @@ async def upload_file(
     if magic_list and not any(content.startswith(magic) for magic in magic_list):
         raise HTTPException(status_code=400, detail="文件内容与声明类型不符")
 
-    relative_path = await storage.save_file(user_id, filename, content)
+    try:
+        relative_path = await storage.save_file(user_id, filename, content)
+    except (RuntimeError, ValueError) as e:
+        logger.error("Storage save failed", exc_info=e)
+        raise HTTPException(status_code=503, detail="存储服务暂时不可用，请稍后重试")
     with session_scope() as db:
         db_file = UserFile(user_id=user_id, filename=filename, path=relative_path)
         db.add(db_file)
@@ -81,5 +85,9 @@ async def list_files(
     user_id: int = Depends(get_current_user_id),
     storage: StorageProvider = Depends(get_storage),
 ):
-    items = await storage.list_files(user_id)
+    try:
+        items = await storage.list_files(user_id)
+    except (RuntimeError, ValueError) as e:
+        logger.error("Storage list failed", exc_info=e)
+        raise HTTPException(status_code=503, detail="存储服务暂时不可用，请稍后重试")
     return {"items": items}
