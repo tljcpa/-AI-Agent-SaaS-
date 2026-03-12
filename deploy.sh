@@ -303,14 +303,15 @@ database:
 
 ms_graph:
   tenant_id: "${MS_GRAPH_TENANT_ID}"
-  client_id: "${MS_GRAPH_CLIENT_ID}"
-  client_secret: "${MS_GRAPH_CLIENT_SECRET}"
+  client_id: ""
+  client_secret: ""
   redirect_uri: "${MS_GRAPH_REDIRECT_URI}"
   scopes:
     - "Files.ReadWrite"
     - "offline_access"
 EOT
   info "已写入：$BACKEND_DIR/config.yaml"
+  warn "MS_GRAPH_CLIENT_ID 和 MS_GRAPH_CLIENT_SECRET 已通过环境变量文件注入，config.yaml 中留空以避免明文存储。"
 }
 
 write_frontend_env() {

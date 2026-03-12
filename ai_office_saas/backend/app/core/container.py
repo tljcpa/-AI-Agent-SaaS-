@@ -10,6 +10,7 @@ from app.adapters.llm_zhipu import ZhipuLLMProvider
 from app.adapters.ms_auth import MSAuthService
 from app.adapters.office_e5 import E5OfficeProvider
 from app.adapters.office_graph import GraphOfficeProvider
+from app.adapters.office_local import LocalOfficeProvider
 from app.adapters.protocols import LLMProvider, OfficeAPIProvider, StorageProvider, ToolSchema
 from app.adapters.storage_local import LocalStorageProvider
 from app.adapters.storage_onedrive import OneDriveStorageProvider
@@ -54,7 +55,11 @@ class ProviderFactory:
         raise ValueError(f"不支持的 llm provider: {settings.llm.provider}")
 
     @staticmethod
-    def create_office(settings: Settings, auth_service: MSAuthService) -> OfficeAPIProvider:
+    def create_office(settings: Settings, auth_service: MSAuthService, storage: StorageProvider) -> OfficeAPIProvider:
+        if settings.office.provider == "local":
+            if not isinstance(storage, LocalStorageProvider):
+                raise ValueError("office.provider=local 要求 storage.type=local")
+            return LocalOfficeProvider(storage=storage)
         if settings.office.provider == "e5_mock":
             return E5OfficeProvider()
         if settings.office.provider == "graph":
@@ -66,7 +71,7 @@ def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppCo
     auth_service = MSAuthService(settings.ms_graph, http_client=http_client)
     storage = ProviderFactory.create_storage(settings, auth_service)
     llm = ProviderFactory.create_llm(settings, http_client)
-    office = ProviderFactory.create_office(settings, auth_service)
+    office = ProviderFactory.create_office(settings, auth_service, storage)
     tool_registry = ToolRegistry()
 
     tool_registry.register(

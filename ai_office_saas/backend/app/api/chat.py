@@ -12,7 +12,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 from app.agent.engine import AgentEngine
-from app.agent.state import AgentState
+from app.agent.state import AgentPhase, AgentState
 from app.core.security import try_get_subject
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -164,6 +164,13 @@ async def websocket_chat(websocket: WebSocket):
                     exc = task.exception()
                     if exc:
                         logger.error("Agent task failed", exc_info=exc)
+
+                state.task = ""
+                state.messages = []
+                state.step_count = 0
+                state.phase = AgentPhase.IDLE
+                state.waiting_action = None
+                state.context = {}
 
                 logger.info("Agent task started", extra={"session_id": session_id, "user_id": state.user_id})
                 running_task = asyncio.create_task(engine.start(state, text, emit))

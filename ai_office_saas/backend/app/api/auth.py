@@ -1,6 +1,8 @@
 """认证接口：注册与登录（返回 JWT）。"""
 from __future__ import annotations
 
+import re
+
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Request
 from sqlalchemy.exc import IntegrityError
@@ -22,6 +24,9 @@ class AuthRequest(BaseModel):
 @router.post("/register")
 @limiter.limit("5/minute")
 def register(request: Request, payload: AuthRequest):
+    if not re.fullmatch(r"[a-zA-Z0-9_一-龥]{3,64}", payload.username):
+        raise HTTPException(status_code=400, detail="用户名只能包含字母、数字、下划线或中文")
+
     user_id: int | None = None
     try:
         with session_scope() as db:

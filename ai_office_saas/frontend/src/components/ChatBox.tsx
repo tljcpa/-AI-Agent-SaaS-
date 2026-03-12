@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 type WSMessage = {
+  id?: string
   type: string
   message: string
   session_id?: string
@@ -28,8 +29,15 @@ export default function ChatBox({ token }: Props) {
   const isManualCloseRef = useRef<boolean>(false)
 
   const pushMessage = (data: WSMessage) => {
+    const withId = {
+      ...data,
+      id:
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    }
     setMessages((prev) => {
-      const next = [...prev, data]
+      const next = [...prev, withId]
       return next.length > MAX_MESSAGES ? next.slice(next.length - MAX_MESSAGES) : next
     })
   }
@@ -40,6 +48,18 @@ export default function ChatBox({ token }: Props) {
     const wsBase = import.meta.env.VITE_WS_BASE_URL || `${defaultWsProto}//localhost:8000`
     return `${wsBase}/api/chat/ws${sid}`
   }, [sessionId])
+
+  // 检查 token 是否已过期
+  const checkTokenExpired = (t: string): boolean => {
+    try {
+      const part = t.split('.')[1]
+      if (!part) return true
+      const payload = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')))
+      return typeof payload.exp === 'number' && payload.exp <= Date.now() / 1000
+    } catch {
+      return true
+    }
+  }
 
   useEffect(() => {
     if (!token) return
@@ -86,6 +106,12 @@ export default function ChatBox({ token }: Props) {
         const delay = Math.min(1000 * 2 ** (attempt - 1), 30000)
         pushMessage({ type: 'system', message: `连接已断开，正在第 ${attempt} 次重连...` })
         reconnectTimerRef.current = window.setTimeout(() => {
+          if (checkTokenExpired(token)) {
+            pushMessage({ type: 'error', message: '登录已过期，请重新登录' })
+            localStorage.removeItem('token')
+            window.location.href = '/'
+            return
+          }
           connect()
         }, delay)
       }
@@ -120,7 +146,7 @@ export default function ChatBox({ token }: Props) {
     <div className="flex flex-col h-full bg-white">
       <div className="flex-1 overflow-auto p-4 space-y-3">
         {messages.map((m, idx) => (
-          <div key={idx} className={m.type === 'user' ? 'text-right' : 'text-left'}>
+          <div key={m.id ?? String(idx)} className={m.type === 'user' ? 'text-right' : 'text-left'}>
             <div className="inline-block max-w-[80%] rounded px-3 py-2 bg-slate-100 text-sm">
               <p className="font-semibold text-xs mb-1">{m.type}</p>
               <p>{m.message}</p>

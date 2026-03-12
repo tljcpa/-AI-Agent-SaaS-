@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Generator
 import threading
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 from app.core.config import get_settings
@@ -48,6 +48,7 @@ class UserFile(Base):
     """用户上传文件表。"""
 
     __tablename__ = "user_files"
+    __table_args__ = (UniqueConstraint("user_id", "filename", name="uq_user_file"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)

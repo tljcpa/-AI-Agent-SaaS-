@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
@@ -56,8 +55,9 @@ async def upload_file(
         raise HTTPException(status_code=400, detail="文件名不能包含空字节")
     if filename.startswith("."):
         raise HTTPException(status_code=400, detail="文件名不能以 . 开头")
-    if re.fullmatch(r"^[a-zA-Z0-9_\-\.]+$", filename) is None:
-        raise HTTPException(status_code=400, detail="文件名只能包含英文字母、数字、下划线、短横线和点")
+    DANGEROUS_CHARS = set('/\:*?"<>|')
+    if any(c in DANGEROUS_CHARS or ord(c) < 0x20 for c in filename):
+        raise HTTPException(status_code=400, detail="文件名包含非法字符")
     # 安全加固：显式拦截路径占位名称，避免下游存储适配器误解析。
     if filename in {".", ".."}:
         raise HTTPException(status_code=400, detail="非法文件名")
