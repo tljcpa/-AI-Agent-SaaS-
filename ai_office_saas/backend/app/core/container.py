@@ -39,8 +39,12 @@ class ProviderFactory:
 
     @staticmethod
     def create_llm(settings: Settings, http_client: httpx.AsyncClient) -> LLMProvider:
-        if settings.llm.provider == "zhipu_mock":
-            return ZhipuLLMProvider(api_key=settings.llm.api_key)
+        if settings.llm.provider == "zhipu":
+            return ZhipuLLMProvider(
+                api_key=settings.llm.api_key,
+                model=settings.llm.model,
+                http_client=http_client,
+            )
         if settings.llm.provider == "openai_compat":
             return OpenAICompatLLMProvider(
                 base_url=settings.llm.base_url,

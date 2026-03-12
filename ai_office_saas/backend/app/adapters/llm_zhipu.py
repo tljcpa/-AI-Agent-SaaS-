@@ -1,24 +1,35 @@
-"""智谱模型适配器（支持基础 function-calling）。"""
+"""智谱 GLM 模型适配器，调用 https://open.bigmodel.cn/api/paas/v4/ 兼容 OpenAI 协议接口"""
 from __future__ import annotations
 
-import asyncio
-import json
 from typing import Any
+
+import httpx
 
 from app.adapters.protocols import ToolCallResult, ToolSchema
 
 
 class ZhipuLLMProvider:
-    """LLMProvider 的示例实现，可无缝替换为真实 API 调用。"""
+    """智谱 GLM 的 OpenAI-Compatible Provider 实现。"""
 
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, model: str, http_client: httpx.AsyncClient) -> None:
         self.api_key = api_key
+        self.model = model
+        self.http_client = http_client
 
     async def generate(self, prompt: str, context: dict | None = None) -> str:
-        await asyncio.sleep(0.2)
+        # 生产改造：移除 mock，直接调用智谱官方 Chat Completions 接口。
+        content = prompt
         if context:
-            return f"[LLM响应] 基于上下文 {context}，建议执行：{prompt[:120]}"
-        return f"[LLM响应] {prompt[:200]}"
+            content = f"{content}\n上下文：{context}"
+        payload = {"model": self.model, "messages": [{"role": "user", "content": content}]}
+        resp = await self.http_client.post(
+            "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json=payload,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"]
 
     async def tool_call(
         self,
@@ -26,33 +37,40 @@ class ZhipuLLMProvider:
         tools: list[ToolSchema],
         context: dict[str, Any] | None = None,
     ) -> ToolCallResult:
-        """轻量 mock：根据最后一条用户消息选择工具。"""
+        # 生产改造：工具调用请求与 openai_compat 完全对齐，避免协议差异。
+        payload_tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": tool.parameters,
+                },
+            }
+            for tool in tools
+        ]
+        payload = {"model": self.model, "messages": messages, "tools": payload_tools}
+        if context:
+            payload["metadata"] = context
+        resp = await self.http_client.post(
+            "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+            headers={"Authorization": f"Bearer {self.api_key}"},
+            json=payload,
+        )
+        resp.raise_for_status()
+        data = resp.json()
 
-        await asyncio.sleep(0.2)
-        user_text = ""
-        if messages:
-            user_text = str(messages[-1].get("content", "")).lower()
+        message = data["choices"][0]["message"]
+        tool_calls = message.get("tool_calls") or []
+        if not tool_calls:
+            content = message.get("content", "")
+            return ToolCallResult(tool_name="", success=False, content=content, tool_arguments="", raw=data)
 
-        if not tools:
-            return ToolCallResult(tool_name="", success=False, content="无可用工具", tool_arguments="")
-
-        selected = tools[0]
-        for tool in tools:
-            if tool.name.lower() in user_text:
-                selected = tool
-                break
-
-        if selected.name in {"read_word_content", "format_word_document"}:
-            tool_arguments = json.dumps({"file_id": "mock-file-id"})
-        elif selected.name in {"read_excel_data", "write_excel_data"}:
-            tool_arguments = json.dumps({"file_id": "mock-file-id", "sheet_name": "Sheet1", "data": []})
-        else:
-            tool_arguments = json.dumps({"file_id": "mock-file-id"})
-
+        func = tool_calls[0]["function"]
         return ToolCallResult(
-            tool_name=selected.name,
+            tool_name=func["name"],
             success=True,
-            content=f"决定调用工具 {selected.name}",
-            tool_arguments=tool_arguments,
-            raw={"messages": len(messages), "context": context or {}},
+            content=message.get("content") or "",
+            tool_arguments=func.get("arguments", "{}"),
+            raw=data,
         )

@@ -29,8 +29,9 @@ def _build_fernet() -> Fernet:
         return Fernet(key.encode("utf-8"))
 
     app_env = os.getenv("APP_ENV", "development")
-    if app_env == "production":
-        raise RuntimeError("生产环境必须设置 TOKEN_ENCRYPT_KEY")
+    if app_env != "development":
+        # 生产部署改造：非开发环境禁止回落到本地文件密钥，防止多实例解密不一致。
+        raise RuntimeError("生产环境必须设置 TOKEN_ENCRYPT_KEY 环境变量")
 
     dev_key = _load_or_create_dev_key()
     warnings.warn(f"TOKEN_ENCRYPT_KEY 未设置，已使用本地开发密钥文件: {_DEV_KEY_PATH}", stacklevel=2)

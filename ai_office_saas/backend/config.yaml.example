@@ -1,27 +1,41 @@
+# 生产部署说明：
+# 1. 复制本文件为 config.yaml
+# 2. 敏感字段（jwt_secret、api_key 等）必须通过环境变量注入，禁止在此填写明文
+# 3. 生产环境必须设置 APP_ENV=production
+
 app:
   name: "AI Office SaaS"
   host: "0.0.0.0"
   port: 8000
   cors_origins:
-    - "http://localhost:5173"
-  agent_max_steps: 5  # Agent ReAct 最大循环步数
+    - "${FRONTEND_ORIGIN}"   # 通过环境变量覆盖，或直接填写前端域名
+  agent_max_steps: 5
+
 security:
-  jwt_secret: "REPLACE_ME_WITH_A_32_BYTE_RANDOM_SECRET"
+  # 禁止在此填写明文密钥，通过环境变量注入：export JWT_SECRET=$(openssl rand -hex 32)
+  jwt_secret: "INSECURE_DEV_ONLY_SET_JWT_SECRET_ENV"
   jwt_algorithm: "HS256"
   access_token_expire_minutes: 120
+
 storage:
-  type: "local" # local | onedrive
-  base_path: "./data/users"
+  type: "local"              # local | onedrive
+  base_path: "./data/users"  # 生产建议使用绝对路径，如 /data/ai-office/users
   onedrive_root: "ai-office-saas"
+
 llm:
-  provider: "zhipu_mock" # zhipu_mock | openai_compat
-  api_key: "在此填入 LLM API Key"
-  base_url: "https://api.openai.com/v1"
-  model: "gpt-4o-mini"
+  provider: "zhipu"          # zhipu | openai_compat
+  api_key: "REPLACE_ME"      # 通过环境变量 LLM_API_KEY 覆盖
+  base_url: "https://open.bigmodel.cn/api/paas/v4"
+  model: "glm-4-flash"       # 可选：glm-4、glm-4-flash、glm-3-turbo
+
 office:
-  provider: "e5_mock" # e5_mock | graph
+  # e5_mock：演示模式，不操作真实文件
+  # graph：真实 OneDrive 操作，需配置下方 ms_graph 字段
+  provider: "e5_mock"
 
 database:
+  # 开发可用 SQLite；生产必须换 PostgreSQL/MySQL
+  # 通过环境变量 DB_URL 覆盖，如：postgresql+psycopg2://user:pass@host:5432/dbname
   url: "sqlite:///./ai_office.db"
 
 ms_graph:

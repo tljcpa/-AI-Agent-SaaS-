@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+import os
 from os import getenv
 from pathlib import Path
 from typing import Any
@@ -79,6 +80,14 @@ def get_settings() -> Settings:
     env_jwt_secret = getenv("JWT_SECRET")
     if env_jwt_secret:
         payload.setdefault("security", {})["jwt_secret"] = env_jwt_secret
+
+    # 生产部署改造：支持通过环境变量覆盖关键配置，避免明文写入配置文件。
+    if os.getenv("LLM_API_KEY"):
+        payload.setdefault("llm", {})["api_key"] = os.getenv("LLM_API_KEY")
+    if os.getenv("DB_URL"):
+        payload.setdefault("database", {})["url"] = os.getenv("DB_URL")
+    if os.getenv("FRONTEND_ORIGIN"):
+        payload.setdefault("app", {})["cors_origins"] = [os.getenv("FRONTEND_ORIGIN")]
 
     settings = Settings.model_validate(payload)
     app_env = getenv("APP_ENV", "development")
