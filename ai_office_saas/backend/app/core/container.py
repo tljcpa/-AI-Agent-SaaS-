@@ -115,7 +115,13 @@ def build_container(settings: Settings, http_client: httpx.AsyncClient) -> AppCo
         lambda *, user_id, file_id, sheet_name, data: office.write_excel_data(user_id, file_id, sheet_name, data),
     )
 
-    engine = AgentEngine(llm=llm, storage=storage, office=office, tool_registry=tool_registry)
+    engine = AgentEngine(
+        llm=llm,
+        storage=storage,
+        office=office,
+        tool_registry=tool_registry,
+        max_steps=settings.app.agent_max_steps,
+    )
     return AppContainer(
         storage=storage,
         llm=llm,

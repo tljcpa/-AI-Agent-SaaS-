@@ -16,6 +16,7 @@ class AppConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    agent_max_steps: int = 5
 
 
 class SecurityConfig(BaseModel):

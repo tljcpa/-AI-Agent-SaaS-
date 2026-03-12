@@ -36,7 +36,8 @@ export default function ChatBox({ token }: Props) {
 
   const wsUrl = useMemo(() => {
     const sid = sessionId ? `?session_id=${sessionId}` : ''
-    const wsBase = import.meta.env.VITE_WS_BASE_URL || 'ws://localhost:8000'
+    const defaultWsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsBase = import.meta.env.VITE_WS_BASE_URL || `${defaultWsProto}//localhost:8000`
     return `${wsBase}/api/chat/ws${sid}`
   }, [sessionId])
 
@@ -54,8 +55,12 @@ export default function ChatBox({ token }: Props) {
       }
 
       ws.onmessage = (ev) => {
-        const data: WSMessage = JSON.parse(ev.data)
-        pushMessage(data)
+        try {
+          const data: WSMessage = JSON.parse(ev.data)
+          pushMessage(data)
+        } catch {
+          console.warn('WebSocket received non-JSON message:', ev.data)
+        }
       }
 
       ws.onerror = () => {

@@ -4,6 +4,7 @@ app:
   port: 8000
   cors_origins:
     - "http://localhost:5173"
+  agent_max_steps: 5  # Agent ReAct 最大循环步数
 security:
   jwt_secret: "REPLACE_ME_WITH_A_32_BYTE_RANDOM_SECRET"
   jwt_algorithm: "HS256"

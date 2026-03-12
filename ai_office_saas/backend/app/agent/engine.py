@@ -21,6 +21,7 @@ class AgentEngine:
         storage: StorageProvider,
         office: OfficeAPIProvider,
         tool_registry: ToolRegistry,
+        max_steps: int = 5,
     ) -> None:
         self.llm = llm
         self.storage = storage
@@ -28,7 +29,7 @@ class AgentEngine:
         self.tool_registry = tool_registry
         self._resume_events: dict[str, asyncio.Event] = {}
         self._resume_events_lock = asyncio.Lock()
-        self.max_steps = 5
+        self.max_steps = max_steps
 
     @staticmethod
     def _event_key(state: AgentState) -> str:
@@ -140,6 +141,8 @@ class AgentEngine:
                         "content": result,
                     }
                 )
+            else:
+                await emit({"type": "warning", "message": f"已达最大执行步数（{self.max_steps}），任务可能未完整完成，建议重新描述任务或拆分步骤。"})
 
             summary = await self.llm.generate("请给出当前任务总结", {"steps": state.step_count})
             await emit({"type": "message", "message": summary})

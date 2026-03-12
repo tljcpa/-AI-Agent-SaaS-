@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from time import time
 from uuid import uuid4
 
@@ -24,6 +25,9 @@ session_states: dict[str, AgentState] = {}
 session_last_seen: dict[str, float] = {}
 MAX_SESSION_STATES = 1000
 SESSION_TTL_SECONDS = 60 * 60
+
+# 运行时兜底提示：检测到多 worker 时仅记录一次告警，避免刷日志。
+_MULTI_WORKER_WARNING_LOGGED = False
 
 
 def _cleanup_session_states() -> None:
@@ -51,6 +55,14 @@ def get_agent_engine(websocket: WebSocket) -> AgentEngine:
 @router.websocket("/ws")
 async def websocket_chat(websocket: WebSocket):
     # WebSocket 鉴权只支持 Authorization header 或首帧 auth 消息，不支持 query param 传 token。
+    global _MULTI_WORKER_WARNING_LOGGED
+    worker_count = int(os.environ.get("WEB_CONCURRENCY", "1"))
+    if worker_count > 1 and not _MULTI_WORKER_WARNING_LOGGED:
+        logger.warning(
+            "WARNING: 检测到多 worker 模式，WebSocket 会话可能跨 worker 路由，请确认已配置 sticky session 或使用 --workers=1"
+        )
+        _MULTI_WORKER_WARNING_LOGGED = True
+
     await websocket.accept()
 
     token = websocket.headers.get("authorization", "").removeprefix("Bearer ").strip()
