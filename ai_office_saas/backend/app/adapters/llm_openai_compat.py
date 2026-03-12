@@ -27,7 +27,11 @@ class OpenAICompatLLMProvider:
         )
         resp.raise_for_status()
         data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError(f"LLM 返回了空的 choices，原始响应：{data}")
+        message = choices[0].get("message") or {}
+        return message.get("content") or ""
 
     async def tool_call(
         self,
@@ -56,8 +60,10 @@ class OpenAICompatLLMProvider:
         )
         resp.raise_for_status()
         data = resp.json()
-
-        message = data["choices"][0]["message"]
+        choices = data.get("choices") or []
+        if not choices:
+            raise RuntimeError(f"LLM 返回了空的 choices，原始响应：{data}")
+        message = choices[0].get("message") or {}
         tool_calls = message.get("tool_calls") or []
         if not tool_calls:
             content = message.get("content", "")

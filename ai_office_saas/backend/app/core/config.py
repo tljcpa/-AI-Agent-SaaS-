@@ -103,6 +103,8 @@ def get_settings() -> Settings:
 
     if settings.security.jwt_secret == "INSECURE_DEV_ONLY_SET_JWT_SECRET_ENV" and app_env != "development":
         raise RuntimeError("生产环境必须通过 JWT_SECRET 环境变量设置强密钥")
+    if app_env == "production" and not settings.llm.api_key:
+        raise RuntimeError("生产环境必须通过 LLM_API_KEY 环境变量设置 LLM API Key")
     return settings
 
 

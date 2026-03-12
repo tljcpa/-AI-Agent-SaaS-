@@ -59,21 +59,41 @@ class AgentEngine:
             state.phase = AgentPhase.EXECUTE
             await emit({"type": "action_progress", "message": "进入 ReAct 执行循环..."})
 
-            try:
-                files = await self.storage.list_files(state.user_id)
-            except Exception as e:
-                logger.error("Failed to list files", exc_info=e)
-                await emit({"type": "error", "message": "获取文件列表失败，请检查存储配置后重试"})
-                state.phase = AgentPhase.ERROR
-                return
-            if not files:
+            async def _fetch_and_inject_files() -> bool:
+                """获取文件列表并注入 system 消息。返回 True 表示有文件，False 表示无文件。"""
+                try:
+                    files = await self.storage.list_files(state.user_id)
+                except Exception as e:
+                    logger.error("Failed to list files", exc_info=e)
+                    await emit({"type": "error", "message": "获取文件列表失败，请检查存储配置后重试"})
+                    state.phase = AgentPhase.ERROR
+                    return False
+                if files:
+                    file_list_str = "\n".join(f"- {name}" for name in files)
+                    system_content = (
+                        "你是一个办公助手 Agent，可以调用工具操作用户文件。\n"
+                        f"当前用户拥有以下文件（调用工具时 file_id 直接使用文件名）：\n{file_list_str}\n"
+                        "请根据用户任务描述，选择合适的工具和文件完成操作。"
+                    )
+                    # 如果 messages 里已有 system 消息则替换，否则插入到最前面
+                    if state.messages and state.messages[0]["role"] == "system":
+                        state.messages[0]["content"] = system_content
+                    else:
+                        state.messages.insert(0, {"role": "system", "content": system_content})
+                    return True
+                return False
+
+            has_files = await _fetch_and_inject_files()
+            if not has_files:
+                if state.phase == AgentPhase.ERROR:
+                    return
                 state.phase = AgentPhase.WAIT_USER
                 state.waiting_action = "need_file"
                 event = await self._register_resume_event(state)
                 await emit(
                     {
                         "type": "action_ask_user",
-                        "message": "未检测到可用文件。若使用 OneDrive，请先访问 /api/oauth/redirect 授权。",
+                        "message": "未检测到可用文件，请先上传文件。上传完成后点击\"已上传，继续\"。",
                         "payload": {"action": "need_file"},
                     }
                 )
@@ -83,12 +103,20 @@ class AgentEngine:
                     await emit({"type": "error", "message": "等待用户响应超时，任务已终止"})
                     state.phase = AgentPhase.ERROR
                     return
+                # 唤醒后重新获取文件列表
+                has_files = await _fetch_and_inject_files()
+                if not has_files:
+                    await emit({"type": "error", "message": "仍未检测到文件，任务终止"})
+                    state.phase = AgentPhase.ERROR
+                    return
 
             state.phase = AgentPhase.EXECUTE
             for i in range(self.max_steps):
                 if len(state.messages) > self.max_message_history:
-                    # 保留第一条用户消息，截断中间历史，保留最近 20 条
-                    state.messages = state.messages[:1] + state.messages[-(self.max_message_history - 1):]
+                    system_msgs = [m for m in state.messages if m["role"] == "system"]
+                    non_system = [m for m in state.messages if m["role"] != "system"]
+                    keep = non_system[-(self.max_message_history - len(system_msgs)):]
+                    state.messages = system_msgs + keep
                 state.step_count += 1
                 tools = self.tool_registry.list()
                 decision = await self.llm.tool_call(state.messages, tools, context={"step": i + 1})
@@ -144,6 +172,9 @@ class AgentEngine:
                     user_id=state.user_id,
                     arguments=filtered_args,
                 )
+                MAX_TOOL_RESULT_CHARS = 6000
+                if len(result) > MAX_TOOL_RESULT_CHARS:
+                    result = result[:MAX_TOOL_RESULT_CHARS] + f"\n...(结果过长，已截断至 {MAX_TOOL_RESULT_CHARS} 字符)"
                 state.messages.append(
                     {
                         "role": "tool",
@@ -154,7 +185,11 @@ class AgentEngine:
             else:
                 await emit({"type": "warning", "message": f"已达最大执行步数（{self.max_steps}），任务可能未完整完成，建议重新描述任务或拆分步骤。"})
 
-            summary = await self.llm.generate("请给出当前任务总结", {"steps": state.step_count})
+            state.messages.append({"role": "user", "content": "请根据以上执行过程，给出简洁的任务完成总结。"})
+            summary_result = await self.llm.tool_call(state.messages, [], context={"step": "summary"})
+            summary = summary_result.content or "任务已完成。"
+            # 把 summary 请求从 messages 里移除，避免污染后续对话
+            state.messages.pop()
             await emit({"type": "message", "message": summary})
             state.phase = AgentPhase.DONE
             logger.info("Agent finished", extra={"session_id": state.session_id, "user_id": state.user_id})

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -58,6 +59,9 @@ async def oauth_callback(
     state: str = Query(...),
     service: MSAuthService = Depends(get_oauth_service),
 ):
+    if not re.fullmatch(r"[A-Za-z0-9\-_.~]{1,2048}", code):
+        raise HTTPException(status_code=400, detail="无效的授权码格式")
+
     with session_scope() as db:
         state_row = (
             db.query(OAuthStateCache)
