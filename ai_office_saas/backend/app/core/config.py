@@ -40,7 +40,7 @@ class LLMConfig(BaseModel):
 
 
 class OfficeConfig(BaseModel):
-    provider: str = "e5_mock"
+    provider: str = "local"
 
 
 class DatabaseConfig(BaseModel):

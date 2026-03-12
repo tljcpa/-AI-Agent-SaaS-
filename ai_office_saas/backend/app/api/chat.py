@@ -25,28 +25,36 @@ session_last_seen: dict[str, float] = {}
 _session_lock = asyncio.Lock()
 MAX_SESSION_STATES = 1000
 SESSION_TTL_SECONDS = 60 * 60
+_last_cleanup_time: float = 0.0
+_CLEANUP_INTERVAL_SECONDS: float = 60.0
 
 # 运行时兜底提示：检测到多 worker 时仅记录一次告警，避免刷日志。
 _MULTI_WORKER_WARNING_LOGGED = False
 
 
 async def _cleanup_session_states() -> None:
+    global _last_cleanup_time
     now = time()
+    if now - _last_cleanup_time < _CLEANUP_INTERVAL_SECONDS:
+        return
     async with _session_lock:
+        # 进锁后再次检查，避免多个协程同时通过节流判断后重复清理
+        if now - _last_cleanup_time < _CLEANUP_INTERVAL_SECONDS:
+            return
         expired = [sid for sid, last_seen in session_last_seen.items() if now - last_seen > SESSION_TTL_SECONDS]
         for sid in expired:
             session_last_seen.pop(sid, None)
             session_states.pop(sid, None)
 
         tracked_session_count = len(session_last_seen)
-        if tracked_session_count <= MAX_SESSION_STATES:
-            return
+        if tracked_session_count > MAX_SESSION_STATES:
+            overflow = tracked_session_count - MAX_SESSION_STATES
+            oldest_session_ids = sorted(session_last_seen.items(), key=lambda item: item[1])[:overflow]
+            for sid, _ in oldest_session_ids:
+                session_last_seen.pop(sid, None)
+                session_states.pop(sid, None)
 
-        overflow = tracked_session_count - MAX_SESSION_STATES
-        oldest_session_ids = sorted(session_last_seen.items(), key=lambda item: item[1])[:overflow]
-        for sid, _ in oldest_session_ids:
-            session_last_seen.pop(sid, None)
-            session_states.pop(sid, None)
+        _last_cleanup_time = now
 
 
 def get_agent_engine(websocket: WebSocket) -> AgentEngine:
@@ -177,6 +185,10 @@ async def websocket_chat(websocket: WebSocket):
                 running_task.add_done_callback(_on_task_done)
 
             elif kind == "user_action":
+                if state is None:
+                    await emit({"type": "error", "message": "请先完成鉴权"})
+                    await websocket.close(code=1008)
+                    return
                 async with _session_lock:
                     session_last_seen[session_id] = time()
                 action = str(incoming.get("action", "")).strip()

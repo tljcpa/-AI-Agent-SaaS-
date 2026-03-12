@@ -19,17 +19,34 @@ def _col_letter(n: int) -> str:
 
 
 class GraphOfficeProvider:
-    def __init__(self, auth_service: MSAuthService, http_client: httpx.AsyncClient) -> None:
+    def __init__(self, auth_service: MSAuthService, http_client: httpx.AsyncClient, root_path: str = "") -> None:
         self.auth_service = auth_service
         self.http_client = http_client
+        self.root_path = root_path.strip("/")
 
     async def _headers(self, user_id: int) -> dict[str, str]:
         token = await self.auth_service.get_valid_access_token(user_id)
         return {"Authorization": f"Bearer {token}"}
 
+    def _content_url(self, user_id: int, file_id: str) -> str:
+        """拼接文件内容访问 URL（路径风格，兼容文件名作为 file_id）。"""
+        prefix = f"{self.root_path}/" if self.root_path else ""
+        path = f"{prefix}user_{user_id}/{file_id}"
+        return f"https://graph.microsoft.com/v1.0/me/drive/root:/{path}:/content"
+
+    async def _resolve_item_id(self, user_id: int, file_id: str) -> str:
+        """通过路径解析出 OneDrive item ID，用于 workbook API。"""
+        headers = await self._headers(user_id)
+        prefix = f"{self.root_path}/" if self.root_path else ""
+        path = f"{prefix}user_{user_id}/{file_id}"
+        url = f"https://graph.microsoft.com/v1.0/me/drive/root:/{path}"
+        resp = await self.http_client.get(url, headers=headers)
+        resp.raise_for_status()
+        return str(resp.json()["id"])
+
     async def read_word_content(self, user_id: int, file_id: str) -> str:
         headers = await self._headers(user_id)
-        url = f"https://graph.microsoft.com/v1.0/me/drive/items/{file_id}/content"
+        url = self._content_url(user_id, file_id)
         resp = await self.http_client.get(url, headers=headers)
         resp.raise_for_status()
         doc = Document(BytesIO(resp.content))
@@ -37,7 +54,7 @@ class GraphOfficeProvider:
 
     async def format_word_document(self, user_id: int, file_id: str, style_instructions: str) -> str:
         headers = await self._headers(user_id)
-        url = f"https://graph.microsoft.com/v1.0/me/drive/items/{file_id}/content"
+        url = self._content_url(user_id, file_id)
         download = await self.http_client.get(url, headers=headers)
         download.raise_for_status()
 
@@ -61,9 +78,10 @@ class GraphOfficeProvider:
 
     async def read_excel_data(self, user_id: int, file_id: str, sheet_name: str) -> str:
         headers = await self._headers(user_id)
+        item_id = await self._resolve_item_id(user_id, file_id)
         url = (
             "https://graph.microsoft.com/v1.0/me/drive/items/"
-            f"{file_id}/workbook/worksheets/{sheet_name}/usedRange"
+            f"{item_id}/workbook/worksheets/{sheet_name}/usedRange"
         )
         resp = await self.http_client.get(url, headers=headers)
         resp.raise_for_status()
@@ -76,13 +94,14 @@ class GraphOfficeProvider:
             return "Excel 数据为空，跳过写入"
 
         headers = await self._headers(user_id)
+        item_id = await self._resolve_item_id(user_id, file_id)
         range_url = (
             "https://graph.microsoft.com/v1.0/me/drive/items/"
-            f"{file_id}/workbook/worksheets/{sheet_name}/range(address='A1')"
+            f"{item_id}/workbook/worksheets/{sheet_name}/range(address='A1')"
         )
         chart_url = (
             "https://graph.microsoft.com/v1.0/me/drive/items/"
-            f"{file_id}/workbook/worksheets/{sheet_name}/charts/add"
+            f"{item_id}/workbook/worksheets/{sheet_name}/charts/add"
         )
         num_cols = len(data[0])
         end_col = _col_letter(num_cols)
